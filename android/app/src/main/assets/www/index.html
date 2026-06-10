@@ -1,0 +1,2371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dora Pilot Assistant</title>
+    <style>
+        @import url("https://fonts.googleapis.com/css2?family=Cal+Sans&display=swap");
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background: transparent !important;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #000;
+            overflow: hidden;
+            color: #fff;
+        }
+
+        body.app-mode {
+            background: #ffffff url("img/bg.jpg") no-repeat center top / cover !important;
+            color: #111827;
+            font-family: "Cal Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            body.app-mode {
+                background: #05070d url("img/bg.jpg") no-repeat center top / cover !important;
+                color: #f8fbff;
+            }
+        }
+
+        .root {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            min-height: 100dvh;
+            overflow: hidden;
+        }
+
+        .gradient-overlay {
+            position: absolute;
+            
+            inset: 0;
+            z-index: 0;
+            height: calc(100% + var(--kb-offset, 0px));
+            transform: translateY(calc(var(--kb-offset, 0px) * -1));
+            transition: transform 220ms ease, height 220ms ease;
+            background: linear-gradient(
+                180deg,
+                transparent 0%,
+                #00000000 30%,
+                #3f6cff 70%,
+                #2450e1 85%,
+                #0055FF 100%
+            );
+            animation: overlayFadeIn 520ms ease-out both;
+        }
+
+        .content {
+            position: relative;
+            z-index: 2;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 32px;
+            box-sizing: border-box;
+        }
+
+        body.app-mode .content {
+            justify-content: flex-start;
+            padding-top: 18px;
+        }
+
+        body.app-mode .gradient-overlay {
+            display: block;
+            pointer-events: none;
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            background: linear-gradient(
+                180deg,
+                rgba(236, 245, 255, 0.46) 0%,
+                rgba(236, 245, 255, 0.26) 24%,
+                rgba(255, 255, 255, 0) 52%,
+                rgba(102, 160, 255, 0.18) 72%,
+                rgba(49, 112, 255, 0.32) 100%
+            );
+        }
+
+        body.app-mode.app-screen-greeting .gradient-overlay {
+            display: none;
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+            background: none;
+        }
+
+        /* Legacy overlay gradient is intentionally retained above as a visual backup. */
+        body:not(.app-mode) .gradient-overlay {
+            display: block;
+            /* Keep height fixed so the translateY keyboard shift moves the dome anchor up with the IME. */
+            height: 100%;
+            pointer-events: none;
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+            background: radial-gradient(
+                circle 150vw at 50% 103%,
+                rgba(173, 216, 255, 1) 0%,
+                rgba(92, 154, 255, 0.98) 26%,
+                rgba(0, 85, 255, 0.95) 56%,
+                rgba(0, 85, 255, 0.55) 76%,
+                rgba(0, 85, 255, 0) 94%
+            );
+            animation:
+                overlayFadeIn 420ms ease-out both,
+                overlayGlowPulse 3s ease-in-out 420ms infinite;
+        }
+
+        body:not(.app-mode).overlay-closing .gradient-overlay {
+            animation: overlayGlowOut 240ms ease-in both;
+        }
+
+        body:not(.app-mode).overlay-closing .bottom {
+            animation: overlayBarSink 240ms ease-in both;
+        }
+
+        @keyframes overlayGlowPulse {
+            0%, 100% {
+                filter: brightness(1);
+            }
+            50% {
+                filter: brightness(1.16);
+            }
+        }
+
+        @keyframes overlayGlowOut {
+            to {
+                opacity: 0;
+            }
+        }
+
+        @keyframes overlayBarSink {
+            to {
+                opacity: 0;
+                transform: translateY(26px) scale(0.98);
+            }
+        }
+
+        .overlay-title {
+            display: none;
+        }
+
+        .dictation-wave {
+            display: none;
+        }
+
+        body:not(.app-mode) .overlay-title {
+            display: block;
+            margin: 0 0 72px;
+            text-align: center;
+            font-family: "Cal Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-size: 30px;
+            font-weight: 500;
+            letter-spacing: -0.01em;
+            color: #ffffff;
+            text-shadow: 0 2px 14px rgba(8, 40, 120, 0.35);
+        }
+
+        body:not(.app-mode) .overlay-title.is-thinking {
+            animation: titlePop 280ms ease-out, titleThinking 1.2s ease-in-out 280ms infinite;
+        }
+
+        body:not(.app-mode) .dictation-wave {
+            display: none;
+        }
+
+        .dictation-wave span {
+            width: 16px;
+            min-height: 22px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.96);
+            box-shadow: 0 8px 22px rgba(0, 55, 180, 0.28);
+            animation: dictationPulse 760ms ease-in-out infinite;
+        }
+
+        .dictation-wave span:nth-child(2) { animation-delay: 80ms; }
+        .dictation-wave span:nth-child(3) { animation-delay: 160ms; }
+        .dictation-wave span:nth-child(4) { animation-delay: 240ms; }
+        .dictation-wave span:nth-child(5) { animation-delay: 320ms; }
+        .dictation-wave span:nth-child(6) { animation-delay: 400ms; }
+        .dictation-wave span:nth-child(7) { animation-delay: 480ms; }
+
+        @keyframes dictationPulse {
+            0%, 100% {
+                height: 24px;
+                transform: scaleY(0.8);
+            }
+            50% {
+                height: 76px;
+                transform: scaleY(1);
+            }
+        }
+
+        body:not(.app-mode) .overlay-title.is-response {
+            font-size: 20px;
+            font-weight: 400;
+            line-height: 1.5;
+            letter-spacing: 0;
+            max-height: 44vh;
+            overflow-y: auto;
+            animation: titlePop 320ms ease-out;
+        }
+
+        body:not(.app-mode) .overlay-title.is-response p {
+            margin: 0 0 8px;
+        }
+
+        body:not(.app-mode) .overlay-title.is-response p:last-child,
+        body:not(.app-mode) .overlay-title.is-response ul:last-child,
+        body:not(.app-mode) .overlay-title.is-response ol:last-child,
+        body:not(.app-mode) .overlay-title.is-response pre:last-child {
+            margin-bottom: 0;
+        }
+
+        body:not(.app-mode) .overlay-title.is-response ul,
+        body:not(.app-mode) .overlay-title.is-response ol {
+            margin: 0 0 8px;
+            padding-left: 24px;
+            text-align: left;
+        }
+
+        body:not(.app-mode) .overlay-title.is-response li {
+            margin: 3px 0;
+        }
+
+        body:not(.app-mode) .overlay-title.is-response code {
+            border-radius: 7px;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 1px 5px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+            font-size: 0.92em;
+        }
+
+        body:not(.app-mode) .overlay-title.is-response pre {
+            margin: 0 0 8px;
+            overflow-x: auto;
+            border-radius: 14px;
+            background: rgba(8, 25, 80, 0.4);
+            padding: 10px 12px;
+            text-align: left;
+        }
+
+        body:not(.app-mode) .overlay-title.is-response pre code {
+            background: transparent;
+            padding: 0;
+        }
+
+        @keyframes titlePop {
+            from {
+                opacity: 0;
+                transform: translateY(12px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes titleThinking {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        body:not(.app-mode) .content {
+            justify-content: flex-end;
+            align-items: center;
+            padding: 24px;
+        }
+
+        body:not(.app-mode) .top-row,
+        body:not(.app-mode) .hero-block,
+        body:not(.app-mode) .chat-shell {
+            display: none;
+        }
+
+        .top-row {
+            display: flex;
+            justify-content: space-between;
+            padding-top: 8px;
+        }
+
+        .back-btn {
+            display: none;
+            width: 44px;
+            height: 40px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.28);
+            background: rgba(255, 255, 255, 0.2);
+            color: rgba(245, 250, 255, 0.95);
+            padding: 0;
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+        }
+
+        .back-btn svg {
+            width: 18px;
+            height: 18px;
+            stroke: currentColor;
+            stroke-width: 2.2;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        body.app-mode.app-screen-chat .back-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .menu-btn {
+            width: 48px;
+            height: 48px;
+            border-radius: 999px;
+            border: 0;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.25);
+            animation: riseIn 420ms ease-out 80ms both;
+        }
+
+        .menu-btn span {
+            width: 16px;
+            height: 1.5px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.92);
+        }
+
+        .bottom {
+            width: min(420px, 100%);
+            margin: 0 auto calc(64px + var(--kb-offset, 0px));
+            transition: margin-bottom 220ms ease;
+        }
+
+        body.app-mode .bottom {
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            margin: 0 auto calc(64px + var(--kb-offset, 0px));
+            min-height: calc(100dvh - 96px - var(--kb-offset, 0px));
+        }
+
+        body:not(.app-mode) .bottom {
+            width: min(420px, 100%);
+            margin: 0 auto calc(44px + var(--kb-offset, 0px));
+            align-self: center;
+            transition: width 220ms ease, margin-bottom 220ms ease;
+        }
+
+        body.app-mode.app-screen-greeting .hero-block {
+            position: absolute;
+            top: 42%;
+            left: 0;
+            right: 0;
+            transform: translateY(-50%);
+            text-align: center;
+            pointer-events: none;
+            z-index: 3;
+        }
+
+        body.app-mode.app-screen-chat .hero-block {
+            display: none;
+        }
+
+        .chat-shell {
+            display: none;
+        }
+
+        body.app-mode.app-screen-chat .chat-shell {
+            display: flex;
+            flex: 1;
+            min-height: 0;
+            overflow: visible;
+            padding: 2px 6px 8px;
+        }
+
+        body.app-mode.app-screen-greeting .chat-shell {
+            display: none;
+        }
+
+        .chat-list {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            overflow-x: visible;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 14px 10px 18px;
+            scrollbar-width: none;
+        }
+
+        .chat-list::-webkit-scrollbar {
+            display: none;
+        }
+
+        .chat-empty {
+            margin: auto;
+            font-size: 14px;
+            color: rgba(245, 250, 255, 0.92);
+            text-align: center;
+            text-shadow: 0 1px 3px rgba(6, 20, 52, 0.45);
+        }
+
+        .chat-msg {
+            max-width: 84%;
+            border-radius: 20px;
+            padding: 16px 18px;
+            font-size: 15px;
+            line-height: 1.5;
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            word-break: break-word;
+            white-space: pre-wrap;
+            box-shadow: 0 8px 22px rgba(20, 40, 86, 0.14);
+            margin: 2px 0;
+        }
+
+        .chat-msg p {
+            margin: 0 0 8px;
+        }
+
+        .chat-msg p:last-child,
+        .chat-msg ul:last-child,
+        .chat-msg ol:last-child,
+        .chat-msg pre:last-child {
+            margin-bottom: 0;
+        }
+
+        .chat-msg ul,
+        .chat-msg ol {
+            margin: 0 0 8px;
+            padding-left: 20px;
+        }
+
+        .chat-msg li {
+            margin: 3px 0;
+        }
+
+        .chat-msg code {
+            border-radius: 7px;
+            background: rgba(15, 23, 42, 0.08);
+            padding: 1px 5px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+            font-size: 0.92em;
+        }
+
+        .chat-msg pre {
+            margin: 0 0 8px;
+            overflow-x: auto;
+            border-radius: 14px;
+            background: rgba(15, 23, 42, 0.08);
+            padding: 10px 12px;
+        }
+
+        .chat-msg pre code {
+            background: transparent;
+            padding: 0;
+        }
+
+        .chat-msg strong {
+            font-weight: 700;
+        }
+
+        .chat-msg-user {
+            align-self: flex-end;
+            color: rgba(245, 250, 255, 0.97);
+            background: rgba(120, 168, 255, 0.24);
+            border: 1px solid rgba(205, 226, 255, 0.34);
+        }
+
+        .chat-msg-assistant {
+            align-self: flex-start;
+            color: rgba(245, 250, 255, 0.95);
+            background: transparent;
+            border: 0;
+            box-shadow: none;
+            padding: 6px 2px;
+            text-shadow: 0 1px 3px rgba(6, 20, 52, 0.5);
+        }
+
+        .action-card {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            align-self: flex-start;
+            max-width: 84%;
+            border-radius: 18px;
+            padding: 13px 16px;
+            margin: 2px 0;
+            color: rgba(245, 250, 255, 0.96);
+            background: rgba(120, 168, 255, 0.18);
+            border: 1px solid rgba(205, 226, 255, 0.30);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            box-shadow: 0 8px 22px rgba(20, 40, 86, 0.16);
+            animation: riseIn 320ms ease-out both;
+        }
+
+        .action-card .ac-icon {
+            flex: 0 0 auto;
+            width: 22px;
+            height: 22px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #cfe2ff;
+        }
+
+        .action-card .ac-icon svg {
+            width: 22px;
+            height: 22px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .action-card.is-loading .ac-icon svg {
+            animation: ac-spin 0.85s linear infinite;
+            transform-origin: 50% 50%;
+        }
+
+        .action-card.is-done {
+            background: rgba(120, 200, 168, 0.16);
+            border-color: rgba(168, 240, 205, 0.32);
+        }
+
+        .action-card.is-done .ac-icon {
+            color: #7cf0b0;
+            animation: ac-pop 360ms ease-out both;
+        }
+
+        .action-card.is-error {
+            background: rgba(255, 138, 138, 0.16);
+            border-color: rgba(255, 190, 190, 0.34);
+        }
+
+        .action-card.is-error .ac-icon {
+            color: #ff9b9b;
+        }
+
+        .action-card .ac-text {
+            font-size: 15px;
+            line-height: 1.4;
+        }
+
+        @keyframes ac-spin {
+            to { transform: rotate(360deg); }
+        }
+
+        @keyframes ac-pop {
+            0% { transform: scale(0.5); opacity: 0.2; }
+            60% { transform: scale(1.18); opacity: 1; }
+            100% { transform: scale(1); }
+        }
+
+        .settings-panel {
+            position: fixed;
+            inset: 0;
+            z-index: 50;
+            display: none;
+            align-items: flex-end;
+            background: rgba(6, 20, 52, 0.42);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+        }
+
+        .settings-panel.is-open {
+            display: flex;
+            animation: fadeIn 200ms ease-out both;
+        }
+
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        .settings-sheet {
+            width: 100%;
+            max-height: 86%;
+            overflow-y: auto;
+            border-radius: 26px 26px 0 0;
+            padding: 22px 20px calc(28px + env(safe-area-inset-bottom));
+            background: rgba(244, 248, 255, 0.92);
+            backdrop-filter: blur(28px);
+            -webkit-backdrop-filter: blur(28px);
+            box-shadow: 0 -10px 40px rgba(12, 28, 64, 0.28);
+            animation: sheetUp 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        @keyframes sheetUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+        .settings-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+
+        .settings-head h2 {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 700;
+            color: #16233f;
+        }
+
+        .settings-close {
+            border: 0;
+            background: rgba(20, 40, 86, 0.08);
+            color: #16233f;
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            font-size: 17px;
+            cursor: pointer;
+        }
+
+        .settings-note {
+            margin: 6px 0 16px;
+            font-size: 13px;
+            line-height: 1.45;
+            color: rgba(22, 35, 63, 0.62);
+        }
+
+        .settings-list { display: flex; flex-direction: column; gap: 10px; }
+
+        .settings-row {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 14px 16px;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.66);
+            border: 1px solid rgba(20, 40, 86, 0.08);
+        }
+
+        .settings-row .sr-icon {
+            flex: 0 0 auto;
+            width: 38px;
+            height: 38px;
+            border-radius: 11px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(90, 140, 255, 0.16);
+            color: #2f6bff;
+        }
+
+        .settings-row .sr-icon svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+        .settings-row .sr-body { flex: 1 1 auto; min-width: 0; }
+        .settings-row .sr-title { font-size: 15px; font-weight: 600; color: #16233f; }
+        .settings-row .sr-desc { font-size: 12.5px; color: rgba(22, 35, 63, 0.58); margin-top: 2px; }
+        .settings-row .sr-desc.needs { color: #c2410c; }
+
+        .switch { position: relative; flex: 0 0 auto; width: 50px; height: 30px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .switch .slider {
+            position: absolute;
+            inset: 0;
+            border-radius: 999px;
+            background: rgba(20, 40, 86, 0.22);
+            transition: background 180ms ease;
+        }
+        .switch .slider::before {
+            content: "";
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            left: 3px;
+            top: 3px;
+            border-radius: 50%;
+            background: #fff;
+            box-shadow: 0 2px 6px rgba(12, 28, 64, 0.3);
+            transition: transform 180ms ease;
+        }
+        .switch input:checked + .slider { background: #2f6bff; }
+        .switch input:checked + .slider::before { transform: translateX(20px); }
+
+        body.app-mode .avatar {
+            margin: 0 auto 24px;
+        }
+
+        body.app-mode .headline {
+            margin-bottom: 32px;
+            margin-top: 0;
+            text-align: center;
+        }
+
+        .avatar {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            margin-bottom: 24px;
+            box-shadow: 0 18px 35px rgba(0, 0, 0, 0.35);
+            animation: riseIn 460ms ease-out 150ms both;
+        }
+
+        .avatar .avatar-logo {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .headline {
+            margin-bottom: 32px;
+            user-select: none;
+            animation: riseIn 520ms ease-out 220ms both;
+        }
+
+        .headline .sub {
+            margin: 0 0 2px;
+            font-size: 30px;
+            line-height: 1.05;
+            font-weight: 300;
+            color: rgba(255, 255, 255, 0.75);
+        }
+
+        body.app-mode .headline .sub {
+            color: rgba(17, 24, 39, 0.72);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            body.app-mode .headline .sub {
+                color: rgba(248, 251, 255, 0.78);
+            }
+
+            body.app-mode .gradient-overlay {
+                background: linear-gradient(
+                    180deg,
+                    rgba(16, 23, 38, 0.38) 0%,
+                    rgba(16, 23, 38, 0.2) 24%,
+                    rgba(5, 7, 13, 0) 52%,
+                    rgba(74, 132, 255, 0.2) 70%,
+                    rgba(34, 93, 255, 0.36) 100%
+                );
+            }
+
+            .chat-empty {
+                color: rgba(244, 248, 255, 0.9);
+            }
+
+            .chat-msg-user {
+                color: rgba(235, 244, 255, 0.95);
+                background: rgba(67, 121, 234, 0.36);
+                border: 1px solid rgba(174, 204, 255, 0.34);
+            }
+
+            .chat-msg-assistant {
+                color: rgba(243, 248, 255, 0.95);
+                background: transparent;
+                border: 0;
+                box-shadow: none;
+            }
+        }
+
+        .headline .main {
+            margin: 0;
+            font-size: 46px;
+            line-height: 1.02;
+            font-weight: 500;
+            letter-spacing: -0.02em;
+        }
+
+        body.app-mode .headline .main {
+            background: linear-gradient(120deg, #0055ff 0%, #bccbff 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .input-wrap {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 56px;
+            padding: 0 18px;
+            box-sizing: border-box;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            box-shadow: 0 12px 32px rgba(255, 255, 255, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+            animation: riseIn 580ms ease-out 290ms both;
+            position: relative;
+            overflow: visible;
+            cursor: pointer;
+        }
+
+        body.app-mode .input-wrap {
+            margin-top: auto;
+            margin-bottom: 0;
+            height: 74px;
+            border-radius: 50px;
+            border: 2px solid rgba(255, 255, 255, 0.38);
+            background: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+            backdrop-filter: blur(30px);
+            -webkit-backdrop-filter: blur(30px);
+            padding: 0 12px;
+            justify-content: space-between;
+            cursor: text;
+        }
+
+        body:not(.app-mode) .input-wrap {
+            margin-top: auto;
+            margin-bottom: 0;
+            height: 74px;
+            padding: 0 12px;
+            border-radius: 50px;
+            border: 0;
+            background: rgba(255, 255, 255, 0.22);
+            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+            backdrop-filter: blur(30px);
+            -webkit-backdrop-filter: blur(30px);
+            align-items: center;
+            justify-content: space-between;
+            cursor: text;
+        }
+
+        body:not(.app-mode) .input-wrap::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            border: 4px solid rgba(255, 255, 255, 0.82);
+            box-sizing: border-box;
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        body:not(.app-mode) .app-composer {
+            position: relative;
+            z-index: 3;
+            height: 100%;
+            align-items: center;
+        }
+
+        body:not(.app-mode) .composer-icon-btn,
+        body:not(.app-mode) .composer-input {
+            color: rgba(255, 255, 255, 0.94);
+        }
+
+        body:not(.app-mode) .composer-input::placeholder {
+            color: rgba(255, 255, 255, 0.76);
+        }
+
+        body:not(.app-mode) .composer-mode-btn {
+            border-color: rgba(255, 255, 255, 0.28);
+            background: rgba(255, 255, 255, 0.22);
+            color: rgba(255, 255, 255, 0.94);
+        }
+
+        body.app-mode .input-wrap::after {
+            content: none;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            body.app-mode .input-wrap,
+            body:not(.app-mode) .input-wrap {
+                border: 1px solid rgba(255, 255, 255, 0.16);
+                background: rgba(255, 255, 255, 0.1);
+                box-shadow: 0 16px 38px rgba(0, 0, 0, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.14);
+            }
+
+            body.app-mode .input-wrap::after {
+                content: none;
+            }
+        }
+
+        .input-wrap::before {
+            content: "";
+            position: absolute;
+            inset: -3px;
+            border-radius: inherit;
+            pointer-events: none;
+            background: radial-gradient(80% 140% at 50% 50%, rgba(120, 188, 255, 0.45), rgba(73, 130, 255, 0.14) 45%, rgba(73, 130, 255, 0) 80%);
+            opacity: 0.45;
+            filter: blur(8px);
+            animation: haloPulse 2.4s ease-in-out infinite;
+            z-index: -1;
+        }
+
+        .voice-wave {
+            width: min(220px, 70%);
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            opacity: 0.9;
+        }
+
+        .app-composer {
+            display: none;
+            align-items: center;
+            width: 100%;
+            gap: 10px;
+        }
+
+        body.app-mode .app-composer {
+            display: flex;
+        }
+
+        body:not(.app-mode) .app-composer {
+            display: flex;
+        }
+
+        body.app-mode .voice-wave {
+            display: none;
+        }
+
+        body:not(.app-mode) .voice-wave {
+            display: none;
+        }
+
+        .composer-icon-btn {
+            width: 34px;
+            height: 34px;
+            border: 0;
+            border-radius: 999px;
+            background: transparent;
+            color: rgba(23, 32, 54, 0.92);
+            font-size: 28px;
+            line-height: 1;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 auto;
+            outline: none;
+            -webkit-tap-highlight-color: transparent;
+            appearance: none;
+            -webkit-appearance: none;
+        }
+
+        .composer-icon-btn:focus,
+        .composer-icon-btn:focus-visible,
+        .composer-icon-btn:active {
+            outline: none;
+            box-shadow: none;
+            background: transparent;
+        }
+
+        .composer-plus {
+            font-size: 28px;
+        }
+
+        .composer-mic {
+            overflow: visible;
+        }
+
+        .composer-send {
+            display: none;
+        }
+
+        .composer-send.is-visible {
+            display: inline-flex;
+        }
+
+        .mic-svg {
+            width: 20px;
+            height: 20px;
+            display: block;
+        }
+
+        .mic-svg rect,
+        .mic-svg path,
+        .mic-svg line {
+            stroke: currentColor;
+            stroke-width: 2.1;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            fill: none;
+        }
+
+        .composer-input {
+            flex: 1;
+            min-width: 0;
+            border: 0;
+            background: transparent;
+            color: rgba(23, 32, 54, 0.9);
+            font-size: 18px;
+            line-height: 1.2;
+            outline: none;
+        }
+
+        .composer-input::placeholder {
+            color: rgba(23, 32, 54, 0.55);
+        }
+
+        .composer-mode-btn {
+            border: 1px solid rgba(74, 117, 214, 0.24);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.72);
+            color: rgba(17, 34, 78, 0.9);
+            font-size: 12px;
+            line-height: 1;
+            font-weight: 600;
+            padding: 8px 12px;
+            white-space: nowrap;
+            flex: 0 0 auto;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            .composer-icon-btn {
+                color: rgba(245, 249, 255, 0.9);
+            }
+
+            .composer-input {
+                color: rgba(245, 249, 255, 0.9);
+            }
+
+            .composer-input::placeholder {
+                color: rgba(245, 249, 255, 0.56);
+            }
+
+            .composer-mode-btn {
+                border: 1px solid rgba(178, 202, 255, 0.24);
+                background: rgba(28, 40, 78, 0.52);
+                color: rgba(233, 242, 255, 0.9);
+            }
+
+        }
+
+        .wave-bar {
+            width: 4px;
+            height: 7px;
+            border-radius: 999px;
+            background: rgba(214, 232, 255, 0.82);
+            transform-origin: center;
+            animation: waveMotion 1.25s ease-in-out infinite;
+        }
+
+        .wave-bar:nth-child(2n) { animation-delay: 0.1s; }
+        .wave-bar:nth-child(3n) { animation-delay: 0.2s; }
+        .wave-bar:nth-child(4n) { animation-delay: 0.3s; }
+        .wave-bar:nth-child(5n) { animation-delay: 0.4s; }
+
+        .input-wrap[data-voice-state="idle"] .wave-bar {
+            height: 6px;
+            animation-duration: 2s;
+            opacity: 0.6;
+        }
+
+        .input-wrap[data-voice-state="listening"] .wave-bar {
+            animation-duration: 0.9s;
+            opacity: 1;
+        }
+
+        .input-wrap[data-voice-state="thinking"] .wave-bar {
+            height: 5px;
+            animation-duration: 1.6s;
+            opacity: 0.75;
+        }
+
+        .input-wrap[data-voice-state="speaking"] .wave-bar {
+            animation-duration: 0.65s;
+            opacity: 1;
+        }
+
+        .input-wrap[data-voice-state="speaking"]::before {
+            opacity: 0.72;
+            filter: blur(10px);
+        }
+
+        .input-wrap[data-voice-state="thinking"]::before {
+            opacity: 0.32;
+            animation-duration: 3.2s;
+        }
+
+        .stream-log {
+            margin-top: 14px;
+            max-height: 94px;
+            overflow: auto;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            background: rgba(13, 23, 44, 0.22);
+            padding: 8px 10px;
+            font-size: 11px;
+            line-height: 1.35;
+            color: rgba(232, 242, 255, 0.88);
+        }
+
+        .stream-line {
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .debug-panel {
+            margin-top: 10px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            background: rgba(8, 15, 32, 0.35);
+            padding: 10px;
+        }
+
+        body.app-mode .debug-panel {
+            display: none;
+        }
+
+        body.app-mode .stream-log {
+            display: none;
+        }
+
+        .debug-input-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .debug-input {
+            flex: 1;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.08);
+            color: #eef5ff;
+            padding: 8px 10px;
+            font-size: 12px;
+            outline: none;
+        }
+
+        .debug-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 6px;
+        }
+
+        .debug-btn {
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            background: rgba(255, 255, 255, 0.1);
+            color: #eef5ff;
+            border-radius: 10px;
+            padding: 7px 6px;
+            font-size: 11px;
+            line-height: 1.2;
+        }
+
+        @keyframes overlayFadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes riseIn {
+            from {
+                opacity: 0;
+                transform: translateY(18px) scale(0.985);
+                filter: blur(2px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+                filter: blur(0);
+            }
+        }
+
+        @keyframes haloPulse {
+            0%, 100% {
+                transform: scale(1);
+                opacity: 0.38;
+            }
+            50% {
+                transform: scale(1.02);
+                opacity: 0.7;
+            }
+        }
+
+        @keyframes waveMotion {
+            0%, 100% {
+                transform: scaleY(0.55);
+                height: 7px;
+            }
+            50% {
+                transform: scaleY(1.35);
+                height: 18px;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .gradient-overlay,
+            .menu-btn,
+            .avatar,
+            .headline,
+            .input-wrap {
+                animation: none;
+            }
+        }
+
+        @media (max-width: 420px) {
+            .content {
+                padding: 24px;
+            }
+
+            .headline .sub {
+                font-size: 24px;
+            }
+
+            .headline .main {
+                font-size: 38px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="root">
+        <div class="gradient-overlay"></div>
+
+        <div class="content">
+            <div class="top-row">
+                <button class="back-btn" id="backToGreetingBtn" type="button" aria-label="Back to greeting">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M15 5L8 12L15 19"></path>
+                    </svg>
+                </button>
+                <button class="menu-btn" type="button" aria-label="Menu">
+                    <span></span>
+                    <span></span>
+                </button>
+            </div>
+
+            <div class="bottom">
+                <div class="hero-block">
+                    <div class="avatar">
+                        <img class="avatar-logo" src="img/dora_pilot_logo.png" alt="Dora logo" />
+                    </div>
+
+                    <div class="headline">
+                        <p class="sub">Hey Mia,</p>
+                        <h1 class="main">Dora is here to help</h1>
+                    </div>
+                </div>
+                <div class="chat-shell">
+                    <div id="chatList" class="chat-list" aria-live="polite">
+                        <p id="chatEmpty" class="chat-empty">Start chatting with Dora.</p>
+                    </div>
+                </div>
+
+                <div id="dictationWave" class="dictation-wave" aria-hidden="true">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                </div>
+                <div id="overlayTitle" class="overlay-title">Ask Dora Pilot</div>
+                <div class="input-wrap">
+                    <div class="app-composer">
+                        <button class="composer-icon-btn composer-plus" id="composerAddBtn" type="button" aria-label="Add">+</button>
+                        <button class="composer-mode-btn" id="composerModeBtn" type="button" aria-label="Toggle inference mode">Local</button>
+                        <input id="composerInput" class="composer-input" type="text" placeholder="Ask Dora Pilot" />
+                        <button class="composer-icon-btn composer-mic" id="composerMicBtn" type="button" aria-label="Microphone">
+                            <svg class="mic-svg" viewBox="0 0 24 24" aria-hidden="true">
+                                <rect x="8" y="3" width="8" height="12" rx="4"></rect>
+                                <path d="M5 11a7 7 0 0 0 14 0"></path>
+                                <line x1="12" y1="18" x2="12" y2="21"></line>
+                                <line x1="9" y1="21" x2="15" y2="21"></line>
+                            </svg>
+                        </button>
+                        <button class="composer-icon-btn composer-send" id="composerSendBtn" type="button" aria-label="Send">
+                            <svg class="mic-svg" viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M3 11.5L21 3L14 21L11 13L3 11.5Z"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="voice-wave" aria-hidden="true">
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="settingsPanel" class="settings-panel" aria-hidden="true">
+            <div class="settings-sheet">
+                <div class="settings-head">
+                    <h2>Personal context</h2>
+                    <button id="settingsClose" class="settings-close" type="button" aria-label="Close">&#10005;</button>
+                </div>
+                <p class="settings-note">All sources are off by default and processed on-device. Turn on only what you want Dora to use for more personal answers.</p>
+                <div id="settingsList" class="settings-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="web-haptics.js"></script>
+    <script>
+        // Route haptics through the native Android vibrator. Samsung's WebView blocks
+        // navigator.vibrate(), so we build a waveform (timings + amplitudes) and hand it
+        // to the AndroidBridge, falling back to navigator.vibrate elsewhere.
+        function buildHapticWaveform(pattern) {
+            const timings = [];
+            const amplitudes = [];
+            (pattern || []).forEach((step) => {
+                const delay = Math.max(0, Math.round(step.delay || 0));
+                if (delay > 0) {
+                    timings.push(delay);
+                    amplitudes.push(0);
+                }
+                const duration = Math.max(0, Math.round(step.duration || 0));
+                if (duration > 0) {
+                    const intensity = step.intensity == null
+                        ? 1
+                        : Math.max(0, Math.min(1, step.intensity));
+                    timings.push(duration);
+                    amplitudes.push(Math.max(1, Math.round(intensity * 255)));
+                }
+            });
+            return { timings, amplitudes };
+        }
+
+        window.haptics = {
+            trigger(pattern) {
+                try {
+                    const { timings, amplitudes } = buildHapticWaveform(pattern);
+                    if (!timings.length) return;
+                    if (window.AndroidBridge && typeof window.AndroidBridge.vibrate === "function") {
+                        window.AndroidBridge.vibrate(JSON.stringify(timings), JSON.stringify(amplitudes));
+                        return;
+                    }
+                    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+                        navigator.vibrate(timings);
+                    }
+                } catch (_error) {
+                    /* haptics are best-effort */
+                }
+            }
+        };
+
+        window.triggerThinkingHaptics = () => {
+            if (window.haptics) {
+                window.haptics.trigger([
+                    { duration: 35, intensity: 1 },
+                    { delay: 85, duration: 10, intensity: 1 },
+                    { delay: 50, duration: 50, intensity: 1 },
+                    { delay: 50, duration: 50 },
+                    { delay: 10, duration: 30 },
+                    { delay: 60, duration: 50 },
+                    { duration: 50 },
+                    { delay: 30, duration: 50 },
+                    { delay: 60, duration: 50 },
+                    { delay: 20, duration: 50 },
+                    { delay: 80, duration: 50, intensity: 1 },
+                ]);
+            }
+        };
+
+        window.triggerDoneHaptics = () => {
+            if (window.haptics) {
+                window.haptics.trigger([
+                    { duration: 80, intensity: 0.8 },
+                    { delay: 80, duration: 50, intensity: 0.69 },
+                ]);
+            }
+        };
+
+        window.triggerErrorHaptics = () => {
+            if (window.haptics) {
+                window.haptics.trigger([
+                    { duration: 40, intensity: 0.7 },
+                    { delay: 40, duration: 40, intensity: 0.7 },
+                    { delay: 40, duration: 40, intensity: 0.9 },
+                    { delay: 40, duration: 50, intensity: 0.6 },
+                ]);
+            }
+        };
+    </script>
+    <script>
+        const urlMode = new URLSearchParams(window.location.search).get("mode");
+        if (urlMode === "app") {
+            document.body.classList.add("app-mode");
+            document.body.classList.add("app-screen-greeting");
+        }
+
+        function resetAssistant() {
+            if (isAppMode) return;
+            overlayClosing = false;
+            clearTimeout(autoListenTimer);
+            clearTimeout(silenceTimer);
+            autoListenTimer = null;
+            silenceTimer = null;
+            if (window.AndroidBridge && typeof window.AndroidBridge.cancelDictation === "function") {
+                window.AndroidBridge.cancelDictation();
+            }
+            isDictating = false;
+            document.body.classList.remove("overlay-chat-open", "overlay-closing");
+            document.body.classList.remove("is-dictating", "is-voice-processing");
+            if (overlayTitle) {
+                overlayTitle.classList.remove("is-thinking", "is-response");
+                overlayTitle.textContent = "Ask Dora Pilot";
+            }
+            if (chatList) {
+                chatList.innerHTML = '<p id="chatEmpty" class="chat-empty">Start chatting with Dora.</p>';
+            }
+            if (composerInput) {
+                composerInput.value = "";
+                composerInput.blur();
+            }
+            updateComposerAction();
+            applyVoiceState("idle");
+        }
+
+        window.resetAssistant = resetAssistant;
+
+        function restartOverlayAnimations() {
+            if (isAppMode) return;
+            const animated = [document.querySelector(".gradient-overlay"), bottomEl, overlayTitle]
+                .filter(Boolean);
+            animated.forEach((node) => {
+                node.style.animation = "none";
+            });
+            void document.body.offsetWidth;
+            animated.forEach((node) => {
+                node.style.animation = "";
+            });
+        }
+
+        function showAssistant() {
+            resetAssistant();
+            restartOverlayAnimations();
+            if (!isAppMode) {
+                autoListenTimer = setTimeout(() => {
+                    startVoiceListen("auto");
+                }, AUTO_LISTEN_DELAY_MS);
+            }
+        }
+
+        window.showAssistant = showAssistant;
+
+        // Backend config now lives in Kotlin BuildConfig (not in this WebView file).
+
+        let overlayClosing = false;
+        function dismissAssistant() {
+            if (!window.AndroidBridge || typeof window.AndroidBridge.dismissAssistant !== "function") {
+                return;
+            }
+            if (document.body.classList.contains("app-mode")) {
+                window.AndroidBridge.dismissAssistant();
+                return;
+            }
+            if (overlayClosing) return;
+            overlayClosing = true;
+            document.body.classList.add("overlay-closing");
+            setTimeout(() => {
+                window.AndroidBridge.dismissAssistant();
+                document.body.classList.remove("overlay-closing");
+                overlayClosing = false;
+            }, 250);
+        }
+
+        const rootEl = document.querySelector(".root");
+        const bottomEl = document.querySelector(".bottom");
+        const menuBtn = document.querySelector(".menu-btn");
+        const backToGreetingBtn = document.querySelector("#backToGreetingBtn");
+        const inputWrap = document.querySelector(".input-wrap");
+        const composerInput = document.querySelector("#composerInput");
+        const composerAddBtn = document.querySelector("#composerAddBtn");
+        const composerMicBtn = document.querySelector("#composerMicBtn");
+        const composerSendBtn = document.querySelector("#composerSendBtn");
+        const composerModeBtn = document.querySelector("#composerModeBtn");
+        const chatList = document.querySelector("#chatList");
+        const chatEmpty = document.querySelector("#chatEmpty");
+        const isAppMode = document.body.classList.contains("app-mode");
+        const fullActionLog = [];
+        const voiceStates = ["idle", "listening", "thinking", "speaking"];
+        let stateIdx = 1;
+        let inferMode = "cloud";
+        let openedModelFileMenuForError = false;
+        let naturalTtsInFlight = false;
+        let autoListenTimer = null;
+        let silenceTimer = null;
+        let isDictating = false;
+        const AUTO_LISTEN_DELAY_MS = 1000;
+        const SILENCE_TIMEOUT_MS = 5200;
+        function setAppScreen(screen) {
+            if (!isAppMode) return;
+            const isChat = screen === "chat";
+            document.body.classList.toggle("app-screen-chat", isChat);
+            document.body.classList.toggle("app-screen-greeting", !isChat);
+        }
+
+        const overlayTitle = document.querySelector("#overlayTitle");
+
+        function setOverlayTitle(role, text) {
+            if (!overlayTitle) return;
+            overlayTitle.classList.remove("is-thinking", "is-response");
+            void overlayTitle.offsetWidth;
+            if (role === "user") {
+                overlayTitle.textContent = "Thinking…";
+                overlayTitle.classList.add("is-thinking");
+            } else {
+                overlayTitle.innerHTML = renderMarkdown(text);
+                overlayTitle.classList.add("is-response");
+            }
+        }
+
+        function focusComposerInput() {
+            if (!composerInput) return;
+            composerInput.focus();
+            if (window.AndroidBridge && typeof window.AndroidBridge.requestKeyboard === "function") {
+                window.AndroidBridge.requestKeyboard();
+                setTimeout(() => window.AndroidBridge.requestKeyboard(), 80);
+                setTimeout(() => window.AndroidBridge.requestKeyboard(), 180);
+            }
+        }
+
+        function setDictationActive(active) {
+            isDictating = active;
+            document.body.classList.toggle("is-dictating", active);
+            document.body.classList.remove("is-voice-processing");
+            applyVoiceState(active ? "listening" : "idle");
+            if (overlayTitle && !isAppMode) {
+                overlayTitle.classList.remove("is-response");
+                overlayTitle.textContent = active ? "Listening…" : "Ask Dora Pilot";
+                overlayTitle.classList.toggle("is-thinking", active);
+            }
+        }
+
+        function startVoiceListen(source = "manual") {
+            if (!window.AndroidBridge || typeof window.AndroidBridge.startDictation !== "function") {
+                window.onTerminalStream("voice", "Native dictation bridge unavailable.");
+                return;
+            }
+            clearTimeout(autoListenTimer);
+            clearTimeout(silenceTimer);
+            if (isDictating) return;
+            playUiChime("start");
+            setDictationActive(true);
+            window.AndroidBridge.startDictation();
+            silenceTimer = setTimeout(() => {
+                if (!isDictating) return;
+                if (window.AndroidBridge && typeof window.AndroidBridge.cancelDictation === "function") {
+                    window.AndroidBridge.cancelDictation();
+                }
+                setDictationActive(false);
+                if (overlayTitle && !isAppMode) {
+                    overlayTitle.classList.remove("is-thinking", "is-response");
+                    overlayTitle.textContent = "Ask Dora Pilot";
+                }
+                playUiChime("end");
+            }, SILENCE_TIMEOUT_MS);
+        }
+
+        function stopVoiceListen() {
+            if (!isDictating) return;
+            if (window.AndroidBridge && typeof window.AndroidBridge.stopDictation === "function") {
+                window.AndroidBridge.stopDictation();
+            }
+            clearTimeout(silenceTimer);
+            isDictating = false;
+            document.body.classList.remove("is-dictating");
+            document.body.classList.add("is-voice-processing");
+            if (overlayTitle && !isAppMode) {
+                overlayTitle.textContent = "Processing…";
+                overlayTitle.classList.add("is-thinking");
+            }
+            applyVoiceState("thinking");
+            if (window.triggerThinkingHaptics) window.triggerThinkingHaptics();
+        }
+
+        function cancelVoiceListen() {
+            clearTimeout(autoListenTimer);
+            clearTimeout(silenceTimer);
+            autoListenTimer = null;
+            silenceTimer = null;
+            if (!isDictating) return;
+            if (window.AndroidBridge && typeof window.AndroidBridge.cancelDictation === "function") {
+                window.AndroidBridge.cancelDictation();
+            }
+            setDictationActive(false);
+        }
+
+        function playUiChime(kind = "start") {
+            try {
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                if (!AudioContextClass) return;
+                const ctx = new AudioContextClass();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = "sine";
+                osc.frequency.value = kind === "start" ? 880 : 520;
+                gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + 0.012);
+                gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.11);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.12);
+                setTimeout(() => ctx.close(), 180);
+            } catch (_error) {
+                // Best-effort UI chime only.
+            }
+        }
+
+        window.onDictationState = (state) => {
+            if (state === "listening" || state === "ready") {
+                setDictationActive(true);
+            } else if (state === "processing") {
+                clearTimeout(silenceTimer);
+                document.body.classList.remove("is-dictating");
+                document.body.classList.add("is-voice-processing");
+                if (overlayTitle && !isAppMode) {
+                    overlayTitle.textContent = "Processing…";
+                    overlayTitle.classList.add("is-thinking");
+                }
+                applyVoiceState("thinking");
+                if (window.triggerThinkingHaptics) window.triggerThinkingHaptics();
+            }
+        };
+
+        window.onDictationText = (text, isFinal) => {
+            const transcript = `${text || ""}`.trim();
+            if (!transcript || !composerInput) return;
+            clearTimeout(silenceTimer);
+            composerInput.value = transcript;
+            updateComposerAction();
+            if (!isFinal) {
+                if (overlayTitle && !isAppMode) {
+                    overlayTitle.textContent = transcript;
+                }
+                return;
+            }
+            document.body.classList.remove("is-dictating", "is-voice-processing");
+            isDictating = false;
+            playUiChime("end");
+            submitComposerPrompt(false);
+        };
+
+        window.onDictationError = (message) => {
+            clearTimeout(silenceTimer);
+            setDictationActive(false);
+            document.body.classList.remove("is-voice-processing");
+            if (overlayTitle && !isAppMode) {
+                overlayTitle.classList.remove("is-thinking", "is-response");
+                overlayTitle.textContent = "Ask Dora Pilot";
+            }
+            playUiChime("end");
+            if (window.triggerErrorHaptics) window.triggerErrorHaptics();
+        };
+
+        const applyVoiceState = (state) => {
+            if (!inputWrap) return;
+            inputWrap.setAttribute("data-voice-state", state);
+        };
+        applyVoiceState(voiceStates[stateIdx]);
+
+        if (!isAppMode && composerInput) {
+            composerInput.placeholder = "";
+        }
+
+        function setInferMode(mode) {
+            inferMode = mode === "cloud" ? "cloud" : "local";
+            if (composerModeBtn) {
+                composerModeBtn.textContent = inferMode === "local" ? "Local" : "Cloud";
+                composerModeBtn.setAttribute(
+                    "aria-label",
+                    inferMode === "local" ? "Switch to cloud inference" : "Switch to local inference"
+                );
+            }
+        }
+        setInferMode("cloud");
+
+        function buildInferPayload(prompt) {
+            return {
+                prompt,
+                use_local: inferMode === "local"
+            };
+        }
+
+        function parseInferenceResult(rawChunk) {
+            const marker = "inference result=";
+            const idx = `${rawChunk}`.indexOf(marker);
+            if (idx < 0) return null;
+            const jsonPart = `${rawChunk}`.slice(idx + marker.length).trim();
+            try {
+                return JSON.parse(jsonPart);
+            } catch (_error) {
+                return null;
+            }
+        }
+
+        function openModelFileMenuOnce() {
+            if (openedModelFileMenuForError) return;
+            openedModelFileMenuForError = true;
+            if (window.AndroidBridge && typeof window.AndroidBridge.openModelFileMenu === "function") {
+                window.AndroidBridge.openModelFileMenu();
+            }
+        }
+
+        window.onTerminalStream = (channel, chunk) => {
+            const entry = `[${channel}] ${chunk}`;
+            fullActionLog.push(entry);
+            while (fullActionLog.length > 2000) {
+                fullActionLog.shift();
+            }
+            if (isAppMode && channel === "agent") {
+                const text = `${chunk || ""}`.trim();
+                if (text) {
+                    const normalized = text.replace(/^Final answer:\s*/i, "");
+                    finalizeAssistant(normalized);
+                }
+            }
+            if (channel === "local_ai" || channel === "backend") {
+                const result = parseInferenceResult(chunk);
+                if (result && result.ok) {
+                    const outputText = `${result.output || ""}`.trim() || "Done.";
+                    finalizeAssistant(outputText, result);
+                } else if (result) {
+                    const errText = `${result.output || ""}`.trim() ||
+                        `Inference error: ${result.error || "request failed"}`;
+                    finalizeAssistant(errText, result);
+                    if (channel === "local_ai" && result.error) {
+                        openModelFileMenuOnce();
+                    }
+                }
+            }
+            // Keep the in-memory log for copy/export without rendering a debug panel.
+        };
+
+        const LUCIDE_ICONS = {
+            loader: '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>',
+            check: '<svg viewBox="0 0 24 24"><path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/></svg>',
+            error: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>',
+            flashlight: '<svg viewBox="0 0 24 24"><path d="M18 6c0 2-2 2-2 4v10a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2V10c0-2-2-2-2-4V2h14z"/><line x1="6" x2="18" y1="6" y2="6"/><line x1="12" x2="12" y1="12" y2="12"/></svg>',
+            volume: '<svg viewBox="0 0 24 24"><path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6A1.4 1.4 0 0 1 5.4 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.4 18.4a9 9 0 0 0 0-12.8"/></svg>',
+            alarm: '<svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M5 3 2 6"/><path d="m22 6-3-3"/><path d="M6.4 18.7 4 21"/><path d="M17.6 18.7 20 21"/></svg>',
+            timer: '<svg viewBox="0 0 24 24"><line x1="10" x2="14" y1="2" y2="2"/><line x1="12" x2="15" y1="14" y2="11"/><circle cx="12" cy="14" r="8"/></svg>',
+            music: '<svg viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>',
+            navigation: '<svg viewBox="0 0 24 24"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>',
+            calendar: '<svg viewBox="0 0 24 24"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>',
+            translate: '<svg viewBox="0 0 24 24"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg>',
+            app: '<svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 4v4"/><path d="M2 8h20"/><path d="M6 4v4"/></svg>',
+            settings: '<svg viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>',
+            sparkles: '<svg viewBox="0 0 24 24"><path d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0L14.06 8.5A2 2 0 0 0 15.5 9.94l6.14 1.58a.5.5 0 0 1 0 .96L15.5 14.06a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"/></svg>'
+        };
+
+        const pendingActionCards = [];
+
+        function pickActionIcon(text) {
+            const t = `${text || ""}`.toLowerCase();
+            if (t.includes("flashlight") || t.includes("torch")) return LUCIDE_ICONS.flashlight;
+            if (t.includes("volume") || t.includes("muted") || t.includes("unmuted")) return LUCIDE_ICONS.volume;
+            if (t.includes("alarm")) return LUCIDE_ICONS.alarm;
+            if (t.includes("timer")) return LUCIDE_ICONS.timer;
+            if (t.includes("playing") || t.includes("paused") || t.includes("track") ||
+                t.includes("spotify") || t.includes("youtube") || t.includes("music") ||
+                t.includes("playback")) return LUCIDE_ICONS.music;
+            if (t.includes("navigat")) return LUCIDE_ICONS.navigation;
+            if (t.includes("calendar") || t.includes("event")) return LUCIDE_ICONS.calendar;
+            if (t.includes("camera")) return LUCIDE_ICONS.app;
+            if (t.includes("opening")) return LUCIDE_ICONS.app;
+            if (t.includes("wi-fi") || t.includes("bluetooth") || t.includes("settings")) return LUCIDE_ICONS.settings;
+            return LUCIDE_ICONS.check;
+        }
+
+        function showActionPending(label) {
+            if (!isAppMode || !chatList) return;
+            setAppScreen("chat");
+            if (chatEmpty && chatEmpty.parentElement) chatEmpty.remove();
+            const card = document.createElement("div");
+            card.className = "action-card is-loading";
+            card.innerHTML =
+                `<span class="ac-icon">${LUCIDE_ICONS.loader}</span>` +
+                `<span class="ac-text">${escapeHtml(label || "Working\u2026")}</span>`;
+            card._createdAt = Date.now();
+            chatList.appendChild(card);
+            chatList.scrollTop = chatList.scrollHeight;
+            pendingActionCards.push(card);
+        }
+
+        function resolveActionCard(text, result) {
+            const card = pendingActionCards.shift();
+            if (!card) return false;
+            const isDevice = !!(result && result.device_action);
+            const isError = !!(result && result.ok === false);
+            const minMs = 520;
+            const elapsed = Date.now() - (card._createdAt || 0);
+            const finish = () => {
+                card.classList.remove("is-loading");
+                if (isError) {
+                    card.classList.add("is-error");
+                    card.querySelector(".ac-icon").innerHTML = LUCIDE_ICONS.error;
+                    card.querySelector(".ac-text").textContent = text;
+                    if (window.triggerErrorHaptics) window.triggerErrorHaptics();
+                } else if (isDevice) {
+                    card.classList.add("is-done");
+                    card.querySelector(".ac-icon").innerHTML = pickActionIcon(text);
+                    card.querySelector(".ac-text").textContent = text;
+                    if (window.triggerDoneHaptics) window.triggerDoneHaptics();
+                    requestNaturalTts(text);
+                } else {
+                    // Conversational/writing answer: replace the card with a normal bubble.
+                    card.remove();
+                    appendChatMessage("assistant", text);
+                    return;
+                }
+                chatList.scrollTop = chatList.scrollHeight;
+            };
+            if (elapsed < minMs) {
+                setTimeout(finish, minMs - elapsed);
+            } else {
+                finish();
+            }
+            return true;
+        }
+
+        function finalizeAssistant(text, result) {
+            if (!text) return;
+            if (pendingActionCards.length > 0) {
+                resolveActionCard(text, result);
+            } else {
+                appendChatMessage("assistant", text);
+            }
+        }
+
+        function appendChatMessage(role, text) {
+            if (!text) return;
+            if (!isAppMode) {
+                setOverlayTitle(role, text);
+                if (role === "assistant") {
+                    requestNaturalTts(text);
+                }
+                return;
+            }
+            if (!chatList) return;
+            setAppScreen("chat");
+            if (chatEmpty && chatEmpty.parentElement) {
+                chatEmpty.remove();
+            }
+            const item = document.createElement("div");
+            item.className = `chat-msg ${role === "user" ? "chat-msg-user" : "chat-msg-assistant"}`;
+            if (role === "assistant") {
+                item.innerHTML = renderMarkdown(text);
+            } else {
+                item.textContent = text;
+            }
+            chatList.appendChild(item);
+            chatList.scrollTop = chatList.scrollHeight;
+            if (role === "assistant") {
+                requestNaturalTts(text);
+            }
+        }
+
+        function escapeHtml(value) {
+            return `${value ?? ""}`
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#39;");
+        }
+
+        function renderInlineMarkdown(value) {
+            return escapeHtml(value)
+                .replace(/`([^`]+)`/g, "<code>$1</code>")
+                .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+                .replace(/\*([^*]+)\*/g, "<em>$1</em>");
+        }
+
+        function renderMarkdown(markdown) {
+            const lines = `${markdown || ""}`.replace(/\r\n/g, "\n").split("\n");
+            const blocks = [];
+            let paragraph = [];
+            let listItems = [];
+            let orderedItems = [];
+            let codeLines = [];
+            let inCode = false;
+
+            const flushParagraph = () => {
+                if (paragraph.length > 0) {
+                    blocks.push(`<p>${renderInlineMarkdown(paragraph.join(" "))}</p>`);
+                    paragraph = [];
+                }
+            };
+            const flushList = () => {
+                if (listItems.length > 0) {
+                    blocks.push(`<ul>${listItems.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join("")}</ul>`);
+                    listItems = [];
+                }
+                if (orderedItems.length > 0) {
+                    blocks.push(`<ol>${orderedItems.map((item) => `<li>${renderInlineMarkdown(item)}</li>`).join("")}</ol>`);
+                    orderedItems = [];
+                }
+            };
+
+            for (const line of lines) {
+                if (line.trim().startsWith("```")) {
+                    if (inCode) {
+                        blocks.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+                        codeLines = [];
+                        inCode = false;
+                    } else {
+                        flushParagraph();
+                        flushList();
+                        inCode = true;
+                    }
+                    continue;
+                }
+                if (inCode) {
+                    codeLines.push(line);
+                    continue;
+                }
+
+                const trimmed = line.trim();
+                if (!trimmed) {
+                    flushParagraph();
+                    flushList();
+                    continue;
+                }
+
+                const bullet = trimmed.match(/^[-*]\s+(.+)$/);
+                const ordered = trimmed.match(/^\d+[.)]\s+(.+)$/);
+                if (bullet) {
+                    flushParagraph();
+                    orderedItems = [];
+                    listItems.push(bullet[1]);
+                    continue;
+                }
+                if (ordered) {
+                    flushParagraph();
+                    listItems = [];
+                    orderedItems.push(ordered[1]);
+                    continue;
+                }
+
+                flushList();
+                paragraph.push(trimmed);
+            }
+
+            if (inCode) {
+                blocks.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+            }
+            flushParagraph();
+            flushList();
+            return blocks.join("");
+        }
+
+        function updateComposerAction() {
+            if (!composerInput || !composerMicBtn || !composerSendBtn) return;
+            const hasText = composerInput.value.trim().length > 0;
+            composerMicBtn.classList.toggle("is-hidden", hasText);
+            composerMicBtn.style.display = hasText ? "none" : "inline-flex";
+            composerSendBtn.classList.toggle("is-visible", hasText);
+        }
+
+        function submitComposerPrompt(shouldRefocus = false) {
+            if (!composerInput) return;
+            const prompt = composerInput.value.trim();
+            if (!prompt) return;
+            if (isAppMode) {
+                setAppScreen("chat");
+            }
+            appendChatMessage("user", prompt);
+            if (window.triggerThinkingHaptics) window.triggerThinkingHaptics();
+            if (isAppMode) showActionPending("Working\u2026");
+            dispatchAgentAction("agent.infer", buildInferPayload(prompt));
+            composerInput.value = "";
+            updateComposerAction();
+            if (shouldRefocus) {
+                composerInput.focus();
+            }
+        }
+
+        async function requestNaturalTts(text) {
+            const spoken = `${text || ""}`.trim();
+            if (!spoken || naturalTtsInFlight) return;
+            if (!window.AndroidBridge || typeof window.AndroidBridge.requestNaturalTts !== "function") {
+                playReplyChime();
+                return;
+            }
+            if (typeof window.AndroidBridge.isVoiceResponsesEnabled === "function" &&
+                !window.AndroidBridge.isVoiceResponsesEnabled()
+            ) {
+                playReplyChime();
+                return;
+            }
+            naturalTtsInFlight = true;
+            applyVoiceState("speaking");
+            try {
+                await Promise.resolve(window.AndroidBridge.requestNaturalTts(spoken));
+            } catch (_error) {
+                window.onTerminalStream("voice", "Natural TTS request failed.");
+            } finally {
+                naturalTtsInFlight = false;
+                applyVoiceState("idle");
+            }
+        }
+
+        async function playReplyChime() {
+            const tryPlay = async (src) => {
+                const audio = new Audio(src);
+                audio.volume = 1;
+                await audio.play();
+            };
+            try {
+                await tryPlay("audio/dora_chime.wav");
+            } catch (_wavError) {
+                try {
+                    await tryPlay("audio/dora_chime.mp3");
+                } catch (_mp3Error) {
+                    playUiChime("end");
+                }
+            }
+        }
+
+        function copyFullActionLog() {
+            const text = fullActionLog.join("\n");
+            if (!text) {
+                window.onTerminalStream("status", "No action log lines to copy yet.");
+                return;
+            }
+            if (window.AndroidBridge && typeof window.AndroidBridge.copyToClipboard === "function") {
+                window.AndroidBridge.copyToClipboard(text);
+                return;
+            }
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text)
+                    .then(() => window.onTerminalStream("status", "Copied full action log to clipboard."))
+                    .catch(() => window.onTerminalStream("error", "Clipboard copy failed."));
+                return;
+            }
+            window.onTerminalStream("error", "No clipboard bridge available.");
+        }
+
+        function dispatchAgentAction(action, payload = {}) {
+            if (!window.AndroidBridge || typeof window.AndroidBridge.dispatchAgentAction !== "function") {
+                window.onTerminalStream("error", "Android bridge unavailable");
+                return;
+            }
+            const packet = {
+                action,
+                ts: Date.now(),
+                ...payload
+            };
+            window.AndroidBridge.dispatchAgentAction(JSON.stringify(packet));
+        }
+
+        window.debugShellBootstrap = () => dispatchAgentAction("shell.bootstrap");
+        window.debugShellHealthcheck = () => dispatchAgentAction("shell.healthcheck");
+        window.debugShellExec = (command = "uname -a") => dispatchAgentAction("shell.exec", { command });
+        window.debugMcpListTools = () => dispatchAgentAction("mcp.list_tools");
+        window.debugMcpListApps = () =>
+            dispatchAgentAction("mcp.call_tool", { tool: "system_capability_scanner.index_all_apps", args: {} });
+        window.debugInfer = (prompt = "Give me a one-line status check.") =>
+            dispatchAgentAction("agent.infer", {
+                prompt
+            });
+        window.debugLocalLoaderCheck = () => dispatchAgentAction("agent.local_loader_check");
+        window.debugOpenModelFileMenu = () => openModelFileMenuOnce();
+        window.debugInferLocal = (prompt = "Reply with one short sentence.") =>
+            dispatchAgentAction("agent.local_infer", {
+                prompt
+            });
+        window.debugRunTask = (goal = "Open settings and verify the app state.") =>
+            dispatchAgentAction("agent.run_task", {
+                goal,
+                max_turns: 6,
+                max_retries: 2
+            });
+        window.debugMcpOpenSettings = () =>
+            dispatchAgentAction("mcp.call_tool", {
+                tool: "intent_routing_server.launch_system_action",
+                args: { actionType: "open_settings" }
+            });
+        window.debugMcpVerifyState = (expectedPackage = "") =>
+            dispatchAgentAction("mcp.call_tool", {
+                tool: "transaction_monitor.verify_app_state",
+                args: { expected_package: expectedPackage }
+            });
+
+        const runMcpSmokeTest = () => {
+            dispatchAgentAction("mcp.list_tools");
+            setTimeout(() => {
+                dispatchAgentAction("mcp.call_tool", { tool: "context_triage_screen.get_foreground_package", args: {} });
+            }, 220);
+            setTimeout(() => {
+                dispatchAgentAction("mcp.call_tool", { tool: "context_triage_screen.get_active_screen_json", args: {} });
+            }, 420);
+            setTimeout(() => {
+                dispatchAgentAction("mcp.call_tool", { tool: "transaction_monitor.verify_app_state", args: {} });
+            }, 620);
+            setTimeout(() => {
+                dispatchAgentAction("mcp.call_tool", {
+                    tool: "intent_routing_server.fire_app_deep_link",
+                    args: { uri: "android.settings.SETTINGS" }
+                });
+            }, 860);
+            setTimeout(() => {
+                dispatchAgentAction("mcp.call_tool", {
+                    tool: "system_capability_scanner.update_changed_package",
+                    args: { packageName: "com.android.settings" }
+                });
+            }, 1120);
+            setTimeout(() => {
+                dispatchAgentAction("mcp.call_tool", {
+                    tool: "system_capability_scanner.index_all_apps",
+                    args: {}
+                });
+            }, 1360);
+            setTimeout(() => {
+                window.debugRunTask("Open Android settings and confirm it opened.");
+            }, 1660);
+        };
+
+        // No automatic shell commands at startup; debug actions are manual via UI panel.
+
+        const updateKeyboardOffset = () => {
+            if (!rootEl) return;
+            if (!window.visualViewport) {
+                rootEl.style.setProperty("--kb-offset", "0px");
+                return;
+            }
+            const viewport = window.visualViewport;
+            const keyboardHeight = Math.max(
+                0,
+                window.innerHeight - viewport.height - viewport.offsetTop
+            );
+            rootEl.style.setProperty("--kb-offset", `${keyboardHeight}px`);
+        };
+
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener("resize", updateKeyboardOffset);
+            window.visualViewport.addEventListener("scroll", updateKeyboardOffset);
+        }
+        window.addEventListener("resize", updateKeyboardOffset);
+        updateKeyboardOffset();
+
+        if (inputWrap) {
+            inputWrap.addEventListener("pointerdown", (event) => {
+                if (isAppMode) {
+                    return;
+                }
+                if (event.target.closest("#composerMicBtn") || event.target.closest("#composerSendBtn")) {
+                    return;
+                }
+                event.stopPropagation();
+                focusComposerInput();
+            });
+            inputWrap.addEventListener("click", (event) => {
+                if (isAppMode) {
+                    return;
+                }
+                if (event.target.closest("#composerMicBtn") || event.target.closest("#composerSendBtn")) {
+                    return;
+                }
+                event.stopPropagation();
+                focusComposerInput();
+            });
+        }
+
+        if (composerInput) {
+            composerInput.addEventListener("focus", () => {
+                if (window.AndroidBridge && typeof window.AndroidBridge.requestKeyboard === "function") {
+                    window.AndroidBridge.requestKeyboard();
+                }
+            });
+            composerInput.addEventListener("input", () => {
+                updateComposerAction();
+            });
+            composerInput.addEventListener("keydown", (event) => {
+                if (event.key !== "Enter") return;
+                event.preventDefault();
+                submitComposerPrompt(false);
+            });
+        }
+
+        if (composerMicBtn) {
+            composerMicBtn.addEventListener("contextmenu", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+            });
+            composerMicBtn.addEventListener("click", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (isDictating) {
+                    stopVoiceListen();
+                } else {
+                    startVoiceListen("manual");
+                }
+            });
+        }
+
+        if (composerSendBtn && composerInput) {
+            composerSendBtn.addEventListener("click", (event) => {
+                event.stopPropagation();
+                submitComposerPrompt(true);
+            });
+            updateComposerAction();
+        }
+
+        if (composerAddBtn) {
+            composerAddBtn.addEventListener("click", (event) => {
+                event.stopPropagation();
+                focusComposerInput();
+            });
+        }
+
+        if (isAppMode && composerModeBtn) {
+            composerModeBtn.addEventListener("click", (event) => {
+                event.stopPropagation();
+                setInferMode(inferMode === "local" ? "cloud" : "local");
+            });
+        }
+
+        const settingsPanel = document.querySelector("#settingsPanel");
+        const settingsList = document.querySelector("#settingsList");
+        const settingsClose = document.querySelector("#settingsClose");
+
+        const CONTEXT_SOURCE_ICONS = {
+            notifications: '<svg viewBox="0 0 24 24"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg>',
+            messages: '<svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+            calendar: '<svg viewBox="0 0 24 24"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>',
+            contacts: '<svg viewBox="0 0 24 24"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
+            usage: '<svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>'
+        };
+
+        const CONTEXT_SOURCES = [
+            { key: "notifications", title: "Notifications", desc: "Recent alerts from your apps" },
+            { key: "messages", title: "Messages", desc: "Incoming messages (read via notifications)" },
+            { key: "calendar", title: "Calendar", desc: "Your upcoming events" },
+            { key: "contacts", title: "Contacts", desc: "Find people to call or text by name" },
+            { key: "usage", title: "App usage", desc: "Your most-used apps" }
+        ];
+
+        function loadContextSettings() {
+            if (!settingsList || !window.AndroidBridge || typeof window.AndroidBridge.getContextSettings !== "function") return;
+            let data = null;
+            try { data = JSON.parse(window.AndroidBridge.getContextSettings()); } catch (_e) { data = null; }
+            const sources = (data && data.sources) || {};
+            settingsList.innerHTML = "";
+            CONTEXT_SOURCES.forEach((src) => {
+                const st = sources[src.key] || { enabled: false, granted: false };
+                const needsPerm = st.enabled && !st.granted;
+                const row = document.createElement("div");
+                row.className = "settings-row";
+                row.innerHTML =
+                    `<span class="sr-icon">${CONTEXT_SOURCE_ICONS[src.key] || ""}</span>` +
+                    `<div class="sr-body"><div class="sr-title">${src.title}</div>` +
+                    `<div class="sr-desc ${needsPerm ? "needs" : ""}">${needsPerm ? "Tap the switch again to grant access" : src.desc}</div></div>` +
+                    `<label class="switch"><input type="checkbox" ${st.enabled ? "checked" : ""}><span class="slider"></span></label>`;
+                const input = row.querySelector("input");
+                input.addEventListener("change", () => {
+                    const enabled = input.checked;
+                    try { window.AndroidBridge.setContextSource(src.key, enabled); } catch (_e) {}
+                    if (enabled && !st.granted && typeof window.AndroidBridge.requestContextPermission === "function") {
+                        window.AndroidBridge.requestContextPermission(src.key);
+                    }
+                    setTimeout(loadContextSettings, 500);
+                });
+                settingsList.appendChild(row);
+            });
+        }
+
+        function openSettingsPanel() {
+            if (!settingsPanel) return;
+            loadContextSettings();
+            settingsPanel.classList.add("is-open");
+            settingsPanel.setAttribute("aria-hidden", "false");
+        }
+
+        function closeSettingsPanel() {
+            if (!settingsPanel) return;
+            settingsPanel.classList.remove("is-open");
+            settingsPanel.setAttribute("aria-hidden", "true");
+        }
+
+        window.refreshContextSettingsIfOpen = function () {
+            if (settingsPanel && settingsPanel.classList.contains("is-open")) {
+                loadContextSettings();
+            }
+        };
+
+        if (settingsClose) settingsClose.addEventListener("click", closeSettingsPanel);
+        if (settingsPanel) {
+            settingsPanel.addEventListener("click", (event) => {
+                if (event.target === settingsPanel) closeSettingsPanel();
+            });
+        }
+        document.addEventListener("visibilitychange", () => {
+            if (!document.hidden && settingsPanel && settingsPanel.classList.contains("is-open")) {
+                loadContextSettings();
+            }
+        });
+
+        if (menuBtn) {
+            menuBtn.addEventListener("pointerdown", (event) => {
+                event.stopPropagation();
+                if (isAppMode) return;
+                // Keep menu for quick smoke test.
+                runMcpSmokeTest();
+            });
+            menuBtn.addEventListener("click", (event) => {
+                event.stopPropagation();
+                if (isAppMode) { openSettingsPanel(); return; }
+                runMcpSmokeTest();
+            });
+            menuBtn.addEventListener("contextmenu", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (isAppMode) return;
+                window.debugMcpOpenSettings();
+            });
+        }
+
+        if (isAppMode && backToGreetingBtn) {
+            backToGreetingBtn.addEventListener("click", (event) => {
+                event.stopPropagation();
+                setAppScreen("greeting");
+                if (composerInput) {
+                    composerInput.blur();
+                }
+            });
+        }
+
+        if (rootEl && bottomEl) {
+            rootEl.addEventListener("click", (event) => {
+                if (isAppMode) return;
+                if (!bottomEl.contains(event.target)) {
+                    dismissAssistant();
+                }
+            });
+        }
+    </script>
+</body>
+</html>

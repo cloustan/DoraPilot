@@ -1,0 +1,1160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dora Pilot Assistant</title>
+    <style>
+        @import url("https://fonts.googleapis.com/css2?family=Cal+Sans&display=swap");
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background: transparent !important;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #000;
+            overflow: hidden;
+            color: #fff;
+        }
+
+        body.app-mode {
+            background: #ffffff url("img/bg.jpg") no-repeat center top / cover !important;
+            color: #111827;
+            font-family: "Cal Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            body.app-mode {
+                background: #05070d url("img/bg.jpg") no-repeat center top / cover !important;
+                color: #f8fbff;
+            }
+        }
+
+        .root {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            min-height: 100dvh;
+            overflow: hidden;
+        }
+
+        .gradient-overlay {
+            position: absolute;
+            inset: 0;
+            z-index: 0;
+            height: calc(100% + var(--kb-offset, 0px));
+            transform: translateY(calc(var(--kb-offset, 0px) * -1));
+            transition: transform 220ms ease, height 220ms ease;
+            background: linear-gradient(
+                180deg,
+                transparent 0%,
+                #00000000 30%,
+                #3f6cff 70%,
+                #2450e1 85%,
+                #0055FF 100%
+            );
+            animation: overlayFadeIn 520ms ease-out both;
+        }
+
+        .content {
+            position: relative;
+            z-index: 2;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 32px;
+            box-sizing: border-box;
+        }
+
+        body.app-mode .content {
+            justify-content: flex-start;
+            padding-top: 18px;
+        }
+
+        body.app-mode .gradient-overlay {
+            display: block;
+            pointer-events: none;
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            background: linear-gradient(
+                180deg,
+                rgba(236, 245, 255, 0.46) 0%,
+                rgba(236, 245, 255, 0.26) 24%,
+                rgba(255, 255, 255, 0) 52%,
+                rgba(102, 160, 255, 0.18) 72%,
+                rgba(49, 112, 255, 0.32) 100%
+            );
+        }
+
+        body.app-mode.app-screen-greeting .gradient-overlay {
+            display: none;
+            backdrop-filter: none;
+            -webkit-backdrop-filter: none;
+            background: none;
+        }
+
+        .top-row {
+            display: flex;
+            justify-content: space-between;
+            padding-top: 8px;
+        }
+
+        .back-btn {
+            display: none;
+            width: 44px;
+            height: 40px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.28);
+            background: rgba(255, 255, 255, 0.2);
+            color: rgba(245, 250, 255, 0.95);
+            padding: 0;
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+        }
+
+        .back-btn svg {
+            width: 18px;
+            height: 18px;
+            stroke: currentColor;
+            stroke-width: 2.2;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        body.app-mode.app-screen-chat .back-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .menu-btn {
+            width: 48px;
+            height: 48px;
+            border-radius: 999px;
+            border: 0;
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.25);
+            animation: riseIn 420ms ease-out 80ms both;
+        }
+
+        .menu-btn span {
+            width: 16px;
+            height: 1.5px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.92);
+        }
+
+        .bottom {
+            width: min(420px, 100%);
+            margin: 0 auto calc(64px + var(--kb-offset, 0px));
+            transition: margin-bottom 220ms ease;
+        }
+
+        body.app-mode .bottom {
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            margin: 0 auto calc(64px + var(--kb-offset, 0px));
+            min-height: calc(100dvh - 96px - var(--kb-offset, 0px));
+        }
+
+        body.app-mode.app-screen-greeting .hero-block {
+            position: absolute;
+            top: 42%;
+            left: 0;
+            right: 0;
+            transform: translateY(-50%);
+            text-align: center;
+            pointer-events: none;
+            z-index: 3;
+        }
+
+        body.app-mode.app-screen-chat .hero-block {
+            display: none;
+        }
+
+        .chat-shell {
+            display: none;
+        }
+
+        body.app-mode.app-screen-chat .chat-shell {
+            display: flex;
+            flex: 1;
+            min-height: 0;
+            overflow: visible;
+            padding: 2px 6px 8px;
+        }
+
+        body.app-mode.app-screen-greeting .chat-shell {
+            display: none;
+        }
+
+        .chat-list {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            overflow-x: visible;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 14px 10px 18px;
+            scrollbar-width: none;
+        }
+
+        .chat-list::-webkit-scrollbar {
+            display: none;
+        }
+
+        .chat-empty {
+            margin: auto;
+            font-size: 14px;
+            color: rgba(245, 250, 255, 0.92);
+            text-align: center;
+            text-shadow: 0 1px 3px rgba(6, 20, 52, 0.45);
+        }
+
+        .chat-msg {
+            max-width: 84%;
+            border-radius: 20px;
+            padding: 16px 18px;
+            font-size: 15px;
+            line-height: 1.5;
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            word-break: break-word;
+            white-space: pre-wrap;
+            box-shadow: 0 8px 22px rgba(20, 40, 86, 0.14);
+            margin: 2px 0;
+        }
+
+        .chat-msg-user {
+            align-self: flex-end;
+            color: rgba(245, 250, 255, 0.97);
+            background: rgba(120, 168, 255, 0.24);
+            border: 1px solid rgba(205, 226, 255, 0.34);
+        }
+
+        .chat-msg-assistant {
+            align-self: flex-start;
+            color: rgba(245, 250, 255, 0.95);
+            background: transparent;
+            border: 0;
+            box-shadow: none;
+            padding: 6px 2px;
+            text-shadow: 0 1px 3px rgba(6, 20, 52, 0.5);
+        }
+
+        body.app-mode .avatar {
+            margin: 0 auto 24px;
+        }
+
+        body.app-mode .headline {
+            margin-bottom: 32px;
+            margin-top: 0;
+            text-align: center;
+        }
+
+        .avatar {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            margin-bottom: 24px;
+            box-shadow: 0 18px 35px rgba(0, 0, 0, 0.35);
+            animation: riseIn 460ms ease-out 150ms both;
+        }
+
+        .avatar .avatar-logo {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .headline {
+            margin-bottom: 32px;
+            user-select: none;
+            animation: riseIn 520ms ease-out 220ms both;
+        }
+
+        .headline .sub {
+            margin: 0 0 2px;
+            font-size: 30px;
+            line-height: 1.05;
+            font-weight: 300;
+            color: rgba(255, 255, 255, 0.75);
+        }
+
+        body.app-mode .headline .sub {
+            color: rgba(17, 24, 39, 0.72);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            body.app-mode .headline .sub {
+                color: rgba(248, 251, 255, 0.78);
+            }
+
+            body.app-mode .gradient-overlay {
+                background: linear-gradient(
+                    180deg,
+                    rgba(16, 23, 38, 0.38) 0%,
+                    rgba(16, 23, 38, 0.2) 24%,
+                    rgba(5, 7, 13, 0) 52%,
+                    rgba(74, 132, 255, 0.2) 70%,
+                    rgba(34, 93, 255, 0.36) 100%
+                );
+            }
+
+            .chat-empty {
+                color: rgba(244, 248, 255, 0.9);
+            }
+
+            .chat-msg-user {
+                color: rgba(235, 244, 255, 0.95);
+                background: rgba(67, 121, 234, 0.36);
+                border: 1px solid rgba(174, 204, 255, 0.34);
+            }
+
+            .chat-msg-assistant {
+                color: rgba(243, 248, 255, 0.95);
+                background: transparent;
+                border: 0;
+                box-shadow: none;
+            }
+        }
+
+        .headline .main {
+            margin: 0;
+            font-size: 46px;
+            line-height: 1.02;
+            font-weight: 500;
+            letter-spacing: -0.02em;
+        }
+
+        body.app-mode .headline .main {
+            background: linear-gradient(120deg, #0055ff 0%, #bccbff 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .input-wrap {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 56px;
+            padding: 0 18px;
+            box-sizing: border-box;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.15);
+            animation: riseIn 580ms ease-out 290ms both;
+            position: relative;
+            overflow: visible;
+            cursor: pointer;
+        }
+
+        body.app-mode .input-wrap {
+            margin-top: auto;
+            margin-bottom: 0;
+            height: 74px;
+            border-radius: 50px;
+            border: 1px solid rgba(255, 255, 255, 0.24);
+            background: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 16px 38px rgba(0, 0, 0, 0.22), inset 0 1px 1px rgba(255, 255, 255, 0.24);
+            backdrop-filter: blur(30px);
+            -webkit-backdrop-filter: blur(30px);
+            padding: 0 12px;
+            justify-content: space-between;
+            cursor: text;
+        }
+
+        body.app-mode .input-wrap::after {
+            content: none;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            body.app-mode .input-wrap {
+                border: 1px solid rgba(255, 255, 255, 0.16);
+                background: rgba(255, 255, 255, 0.1);
+                box-shadow: 0 16px 38px rgba(0, 0, 0, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.14);
+            }
+
+            body.app-mode .input-wrap::after {
+                content: none;
+            }
+        }
+
+        .input-wrap::before {
+            content: "";
+            position: absolute;
+            inset: -3px;
+            border-radius: inherit;
+            pointer-events: none;
+            background: radial-gradient(80% 140% at 50% 50%, rgba(120, 188, 255, 0.45), rgba(73, 130, 255, 0.14) 45%, rgba(73, 130, 255, 0) 80%);
+            opacity: 0.45;
+            filter: blur(8px);
+            animation: haloPulse 2.4s ease-in-out infinite;
+            z-index: -1;
+        }
+
+        .voice-wave {
+            width: min(220px, 70%);
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 4px;
+            opacity: 0.9;
+        }
+
+        .app-composer {
+            display: none;
+            align-items: center;
+            width: 100%;
+            gap: 10px;
+        }
+
+        body.app-mode .app-composer {
+            display: flex;
+        }
+
+        body.app-mode .voice-wave {
+            display: none;
+        }
+
+        .composer-icon-btn {
+            width: 34px;
+            height: 34px;
+            border: 0;
+            border-radius: 999px;
+            background: transparent;
+            color: rgba(23, 32, 54, 0.92);
+            font-size: 28px;
+            line-height: 1;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 auto;
+        }
+
+        .composer-plus {
+            font-size: 28px;
+        }
+
+        .composer-mic {
+            overflow: visible;
+        }
+
+        .composer-send {
+            display: none;
+        }
+
+        .composer-send.is-visible {
+            display: inline-flex;
+        }
+
+        .mic-svg {
+            width: 20px;
+            height: 20px;
+            display: block;
+        }
+
+        .mic-svg rect,
+        .mic-svg path,
+        .mic-svg line {
+            stroke: currentColor;
+            stroke-width: 2.1;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            fill: none;
+        }
+
+        .composer-input {
+            flex: 1;
+            min-width: 0;
+            border: 0;
+            background: transparent;
+            color: rgba(23, 32, 54, 0.9);
+            font-size: 18px;
+            line-height: 1.2;
+            outline: none;
+        }
+
+        .composer-input::placeholder {
+            color: rgba(23, 32, 54, 0.55);
+        }
+
+        .composer-mode-btn {
+            border: 1px solid rgba(74, 117, 214, 0.24);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.72);
+            color: rgba(17, 34, 78, 0.9);
+            font-size: 12px;
+            line-height: 1;
+            font-weight: 600;
+            padding: 8px 12px;
+            white-space: nowrap;
+            flex: 0 0 auto;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            .composer-icon-btn {
+                color: rgba(245, 249, 255, 0.9);
+            }
+
+            .composer-input {
+                color: rgba(245, 249, 255, 0.9);
+            }
+
+            .composer-input::placeholder {
+                color: rgba(245, 249, 255, 0.56);
+            }
+
+            .composer-mode-btn {
+                border: 1px solid rgba(178, 202, 255, 0.24);
+                background: rgba(28, 40, 78, 0.52);
+                color: rgba(233, 242, 255, 0.9);
+            }
+
+        }
+
+        .wave-bar {
+            width: 4px;
+            height: 7px;
+            border-radius: 999px;
+            background: rgba(214, 232, 255, 0.82);
+            transform-origin: center;
+            animation: waveMotion 1.25s ease-in-out infinite;
+        }
+
+        .wave-bar:nth-child(2n) { animation-delay: 0.1s; }
+        .wave-bar:nth-child(3n) { animation-delay: 0.2s; }
+        .wave-bar:nth-child(4n) { animation-delay: 0.3s; }
+        .wave-bar:nth-child(5n) { animation-delay: 0.4s; }
+
+        .input-wrap[data-voice-state="idle"] .wave-bar {
+            height: 6px;
+            animation-duration: 2s;
+            opacity: 0.6;
+        }
+
+        .input-wrap[data-voice-state="listening"] .wave-bar {
+            animation-duration: 0.9s;
+            opacity: 1;
+        }
+
+        .input-wrap[data-voice-state="thinking"] .wave-bar {
+            height: 5px;
+            animation-duration: 1.6s;
+            opacity: 0.75;
+        }
+
+        .input-wrap[data-voice-state="speaking"] .wave-bar {
+            animation-duration: 0.65s;
+            opacity: 1;
+        }
+
+        .input-wrap[data-voice-state="speaking"]::before {
+            opacity: 0.72;
+            filter: blur(10px);
+        }
+
+        .input-wrap[data-voice-state="thinking"]::before {
+            opacity: 0.32;
+            animation-duration: 3.2s;
+        }
+
+        .stream-log {
+            margin-top: 14px;
+            max-height: 94px;
+            overflow: auto;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            background: rgba(13, 23, 44, 0.22);
+            padding: 8px 10px;
+            font-size: 11px;
+            line-height: 1.35;
+            color: rgba(232, 242, 255, 0.88);
+        }
+
+        .stream-line {
+            margin: 0;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .debug-panel {
+            margin-top: 10px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            background: rgba(8, 15, 32, 0.35);
+            padding: 10px;
+        }
+
+        body.app-mode .debug-panel {
+            display: none;
+        }
+
+        body.app-mode .stream-log {
+            display: none;
+        }
+
+        .debug-input-row {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .debug-input {
+            flex: 1;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.08);
+            color: #eef5ff;
+            padding: 8px 10px;
+            font-size: 12px;
+            outline: none;
+        }
+
+        .debug-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 6px;
+        }
+
+        .debug-btn {
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            background: rgba(255, 255, 255, 0.1);
+            color: #eef5ff;
+            border-radius: 10px;
+            padding: 7px 6px;
+            font-size: 11px;
+            line-height: 1.2;
+        }
+
+        @keyframes overlayFadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes riseIn {
+            from {
+                opacity: 0;
+                transform: translateY(18px) scale(0.985);
+                filter: blur(2px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+                filter: blur(0);
+            }
+        }
+
+        @keyframes haloPulse {
+            0%, 100% {
+                transform: scale(1);
+                opacity: 0.38;
+            }
+            50% {
+                transform: scale(1.02);
+                opacity: 0.7;
+            }
+        }
+
+        @keyframes waveMotion {
+            0%, 100% {
+                transform: scaleY(0.55);
+                height: 7px;
+            }
+            50% {
+                transform: scaleY(1.35);
+                height: 18px;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .gradient-overlay,
+            .menu-btn,
+            .avatar,
+            .headline,
+            .input-wrap {
+                animation: none;
+            }
+        }
+
+        @media (max-width: 420px) {
+            .content {
+                padding: 24px;
+            }
+
+            .headline .sub {
+                font-size: 24px;
+            }
+
+            .headline .main {
+                font-size: 38px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="root">
+        <div class="gradient-overlay"></div>
+
+        <div class="content">
+            <div class="top-row">
+                <button class="back-btn" id="backToGreetingBtn" type="button" aria-label="Back to greeting">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M15 5L8 12L15 19"></path>
+                    </svg>
+                </button>
+                <button class="menu-btn" type="button" aria-label="Menu">
+                    <span></span>
+                    <span></span>
+                </button>
+            </div>
+
+            <div class="bottom">
+                <div class="hero-block">
+                    <div class="avatar">
+                        <img class="avatar-logo" src="img/dora_pilot_logo.png" alt="Dora logo" />
+                    </div>
+
+                    <div class="headline">
+                        <p class="sub">Hey Mia,</p>
+                        <h1 class="main">Dora is here to help</h1>
+                    </div>
+                </div>
+                <div class="chat-shell">
+                    <div id="chatList" class="chat-list" aria-live="polite">
+                        <p id="chatEmpty" class="chat-empty">Start chatting with Dora.</p>
+                    </div>
+                </div>
+
+                <div class="input-wrap">
+                    <div class="app-composer">
+                        <button class="composer-icon-btn composer-plus" id="composerAddBtn" type="button" aria-label="Add">+</button>
+                        <button class="composer-mode-btn" id="composerModeBtn" type="button" aria-label="Toggle inference mode">Local</button>
+                        <input id="composerInput" class="composer-input" type="text" placeholder="Ask Dora Pilot" />
+                        <button class="composer-icon-btn composer-mic" id="composerMicBtn" type="button" aria-label="Microphone">
+                            <svg class="mic-svg" viewBox="0 0 24 24" aria-hidden="true">
+                                <rect x="8" y="3" width="8" height="12" rx="4"></rect>
+                                <path d="M5 11a7 7 0 0 0 14 0"></path>
+                                <line x1="12" y1="18" x2="12" y2="21"></line>
+                                <line x1="9" y1="21" x2="15" y2="21"></line>
+                            </svg>
+                        </button>
+                        <button class="composer-icon-btn composer-send" id="composerSendBtn" type="button" aria-label="Send">
+                            <svg class="mic-svg" viewBox="0 0 24 24" aria-hidden="true">
+                                <path d="M3 11.5L21 3L14 21L11 13L3 11.5Z"></path>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="voice-wave" aria-hidden="true">
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                        <span class="wave-bar"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const urlMode = new URLSearchParams(window.location.search).get("mode");
+        if (urlMode === "app") {
+            document.body.classList.add("app-mode");
+            document.body.classList.add("app-screen-greeting");
+        }
+
+        // Backend config now lives in Kotlin BuildConfig (not in this preview file).
+
+        function dismissAssistant() {
+            if (window.AndroidBridge && typeof window.AndroidBridge.dismissAssistant === "function") {
+                window.AndroidBridge.dismissAssistant();
+            }
+        }
+
+        const rootEl = document.querySelector(".root");
+        const bottomEl = document.querySelector(".bottom");
+        const menuBtn = document.querySelector(".menu-btn");
+        const backToGreetingBtn = document.querySelector("#backToGreetingBtn");
+        const inputWrap = document.querySelector(".input-wrap");
+        const composerInput = document.querySelector("#composerInput");
+        const composerMicBtn = document.querySelector("#composerMicBtn");
+        const composerSendBtn = document.querySelector("#composerSendBtn");
+        const composerModeBtn = document.querySelector("#composerModeBtn");
+        const chatList = document.querySelector("#chatList");
+        const chatEmpty = document.querySelector("#chatEmpty");
+        const isAppMode = document.body.classList.contains("app-mode");
+        const fullActionLog = [];
+        const voiceStates = ["idle", "listening", "thinking", "speaking"];
+        let stateIdx = 1;
+        let inferMode = "cloud";
+        let openedModelFileMenuForError = false;
+        function setAppScreen(screen) {
+            if (!isAppMode) return;
+            const isChat = screen === "chat";
+            document.body.classList.toggle("app-screen-chat", isChat);
+            document.body.classList.toggle("app-screen-greeting", !isChat);
+        }
+
+        const applyVoiceState = (state) => {
+            if (!inputWrap) return;
+            inputWrap.setAttribute("data-voice-state", state);
+        };
+        applyVoiceState(voiceStates[stateIdx]);
+
+        function setInferMode(mode) {
+            inferMode = mode === "cloud" ? "cloud" : "local";
+            if (composerModeBtn) {
+                composerModeBtn.textContent = inferMode === "local" ? "Local" : "Cloud";
+                composerModeBtn.setAttribute(
+                    "aria-label",
+                    inferMode === "local" ? "Switch to cloud inference" : "Switch to local inference"
+                );
+            }
+        }
+        setInferMode("cloud");
+
+        function buildInferPayload(prompt) {
+            return {
+                prompt,
+                use_local: inferMode === "local"
+            };
+        }
+
+        function parseInferenceResult(rawChunk) {
+            const marker = "inference result=";
+            const idx = `${rawChunk}`.indexOf(marker);
+            if (idx < 0) return null;
+            const jsonPart = `${rawChunk}`.slice(idx + marker.length).trim();
+            try {
+                return JSON.parse(jsonPart);
+            } catch (_error) {
+                return null;
+            }
+        }
+
+        function openModelFileMenuOnce() {
+            if (openedModelFileMenuForError) return;
+            openedModelFileMenuForError = true;
+            if (window.AndroidBridge && typeof window.AndroidBridge.openModelFileMenu === "function") {
+                window.AndroidBridge.openModelFileMenu();
+            }
+        }
+
+        window.onTerminalStream = (channel, chunk) => {
+            const entry = `[${channel}] ${chunk}`;
+            fullActionLog.push(entry);
+            while (fullActionLog.length > 2000) {
+                fullActionLog.shift();
+            }
+            if (isAppMode && channel === "agent") {
+                const text = `${chunk || ""}`.trim();
+                if (text) {
+                    const normalized = text.replace(/^Final answer:\s*/i, "");
+                    appendChatMessage("assistant", normalized);
+                }
+            }
+            if (isAppMode && (channel === "local_ai" || channel === "backend")) {
+                const result = parseInferenceResult(chunk);
+                if (result && result.ok) {
+                    const outputText = `${result.output || ""}`.trim();
+                    if (outputText) {
+                        appendChatMessage("assistant", outputText);
+                    }
+                } else if (result && result.error) {
+                    appendChatMessage("assistant", `Inference error: ${result.error}`);
+                    if (channel === "local_ai") {
+                        openModelFileMenuOnce();
+                    }
+                }
+            }
+            // Keep the in-memory log for copy/export without rendering a debug panel.
+        };
+
+        function appendChatMessage(role, text) {
+            if (!chatList || !text) return;
+            setAppScreen("chat");
+            if (chatEmpty && chatEmpty.parentElement) {
+                chatEmpty.remove();
+            }
+            const item = document.createElement("div");
+            item.className = `chat-msg ${role === "user" ? "chat-msg-user" : "chat-msg-assistant"}`;
+            item.textContent = text;
+            chatList.appendChild(item);
+            chatList.scrollTop = chatList.scrollHeight;
+        }
+
+        function updateComposerAction() {
+            if (!isAppMode || !composerInput || !composerMicBtn || !composerSendBtn) return;
+            const hasText = composerInput.value.trim().length > 0;
+            composerMicBtn.classList.toggle("is-hidden", hasText);
+            composerMicBtn.style.display = hasText ? "none" : "inline-flex";
+            composerSendBtn.classList.toggle("is-visible", hasText);
+        }
+
+        function copyFullActionLog() {
+            const text = fullActionLog.join("\n");
+            if (!text) {
+                window.onTerminalStream("status", "No action log lines to copy yet.");
+                return;
+            }
+            if (window.AndroidBridge && typeof window.AndroidBridge.copyToClipboard === "function") {
+                window.AndroidBridge.copyToClipboard(text);
+                return;
+            }
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text)
+                    .then(() => window.onTerminalStream("status", "Copied full action log to clipboard."))
+                    .catch(() => window.onTerminalStream("error", "Clipboard copy failed."));
+                return;
+            }
+            window.onTerminalStream("error", "No clipboard bridge available.");
+        }
+
+        function dispatchAgentAction(action, payload = {}) {
+            if (!window.AndroidBridge || typeof window.AndroidBridge.dispatchAgentAction !== "function") {
+                window.onTerminalStream("error", "Android bridge unavailable");
+                return;
+            }
+            const packet = {
+                action,
+                ts: Date.now(),
+                ...payload
+            };
+            window.AndroidBridge.dispatchAgentAction(JSON.stringify(packet));
+        }
+
+        window.debugShellBootstrap = () => dispatchAgentAction("shell.bootstrap");
+        window.debugShellHealthcheck = () => dispatchAgentAction("shell.healthcheck");
+        window.debugShellExec = (command = "uname -a") => dispatchAgentAction("shell.exec", { command });
+        window.debugMcpListTools = () => dispatchAgentAction("mcp.list_tools");
+        window.debugMcpListApps = () =>
+            dispatchAgentAction("mcp.call_tool", { tool: "system_capability_scanner.index_all_apps", args: {} });
+        window.debugInfer = (prompt = "Give me a one-line status check.") =>
+            dispatchAgentAction("agent.infer", {
+                prompt
+            });
+        window.debugLocalLoaderCheck = () => dispatchAgentAction("agent.local_loader_check");
+        window.debugOpenModelFileMenu = () => openModelFileMenuOnce();
+        window.debugInferLocal = (prompt = "Reply with one short sentence.") =>
+            dispatchAgentAction("agent.local_infer", {
+                prompt
+            });
+        window.debugRunTask = (goal = "Open settings and verify the app state.") =>
+            dispatchAgentAction("agent.run_task", {
+                goal,
+                max_turns: 6,
+                max_retries: 2
+            });
+        window.debugMcpOpenSettings = () =>
+            dispatchAgentAction("mcp.call_tool", {
+                tool: "intent_routing_server.launch_system_action",
+                args: { actionType: "open_settings" }
+            });
+        window.debugMcpVerifyState = (expectedPackage = "") =>
+            dispatchAgentAction("mcp.call_tool", {
+                tool: "transaction_monitor.verify_app_state",
+                args: { expected_package: expectedPackage }
+            });
+
+        const runMcpSmokeTest = () => {
+            dispatchAgentAction("mcp.list_tools");
+            setTimeout(() => {
+                dispatchAgentAction("mcp.call_tool", { tool: "context_triage_screen.get_foreground_package", args: {} });
+            }, 220);
+            setTimeout(() => {
+                dispatchAgentAction("mcp.call_tool", { tool: "context_triage_screen.get_active_screen_json", args: {} });
+            }, 420);
+            setTimeout(() => {
+                dispatchAgentAction("mcp.call_tool", { tool: "transaction_monitor.verify_app_state", args: {} });
+            }, 620);
+            setTimeout(() => {
+                dispatchAgentAction("mcp.call_tool", {
+                    tool: "intent_routing_server.fire_app_deep_link",
+                    args: { uri: "android.settings.SETTINGS" }
+                });
+            }, 860);
+            setTimeout(() => {
+                dispatchAgentAction("mcp.call_tool", {
+                    tool: "system_capability_scanner.update_changed_package",
+                    args: { packageName: "com.android.settings" }
+                });
+            }, 1120);
+            setTimeout(() => {
+                dispatchAgentAction("mcp.call_tool", {
+                    tool: "system_capability_scanner.index_all_apps",
+                    args: {}
+                });
+            }, 1360);
+            setTimeout(() => {
+                window.debugRunTask("Open Android settings and confirm it opened.");
+            }, 1660);
+        };
+
+        // No automatic shell commands at startup; debug actions are manual via UI panel.
+
+        const updateKeyboardOffset = () => {
+            if (!rootEl) return;
+            if (!window.visualViewport) {
+                rootEl.style.setProperty("--kb-offset", "0px");
+                return;
+            }
+            const viewport = window.visualViewport;
+            const keyboardHeight = Math.max(
+                0,
+                window.innerHeight - viewport.height - viewport.offsetTop
+            );
+            rootEl.style.setProperty("--kb-offset", `${keyboardHeight}px`);
+        };
+
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener("resize", updateKeyboardOffset);
+            window.visualViewport.addEventListener("scroll", updateKeyboardOffset);
+        }
+        window.addEventListener("resize", updateKeyboardOffset);
+        updateKeyboardOffset();
+
+        if (inputWrap) {
+            inputWrap.addEventListener("pointerdown", (event) => {
+                if (isAppMode) {
+                    return;
+                }
+                event.stopPropagation();
+                stateIdx = (stateIdx + 1) % voiceStates.length;
+                const nextState = voiceStates[stateIdx];
+                applyVoiceState(nextState);
+                dispatchAgentAction("voice.state.change", { state: nextState });
+            });
+        }
+
+        if (isAppMode && composerInput) {
+            composerInput.addEventListener("focus", () => {
+                if (window.AndroidBridge && typeof window.AndroidBridge.requestKeyboard === "function") {
+                    window.AndroidBridge.requestKeyboard();
+                }
+            });
+            composerInput.addEventListener("input", () => updateComposerAction());
+            composerInput.addEventListener("keydown", (event) => {
+                if (event.key !== "Enter") return;
+                event.preventDefault();
+                const prompt = composerInput.value.trim();
+                if (!prompt) return;
+                setAppScreen("chat");
+                appendChatMessage("user", prompt);
+                dispatchAgentAction("agent.infer", buildInferPayload(prompt));
+                composerInput.value = "";
+                updateComposerAction();
+            });
+        }
+
+        if (isAppMode && composerMicBtn) {
+            composerMicBtn.addEventListener("click", (event) => {
+                event.stopPropagation();
+                stateIdx = (stateIdx + 1) % voiceStates.length;
+                const nextState = voiceStates[stateIdx];
+                applyVoiceState(nextState);
+                dispatchAgentAction("voice.state.change", { state: nextState });
+            });
+        }
+
+        if (isAppMode && composerSendBtn && composerInput) {
+            composerSendBtn.addEventListener("click", (event) => {
+                event.stopPropagation();
+                const prompt = composerInput.value.trim();
+                if (!prompt) return;
+                setAppScreen("chat");
+                appendChatMessage("user", prompt);
+                dispatchAgentAction("agent.infer", buildInferPayload(prompt));
+                composerInput.value = "";
+                updateComposerAction();
+                composerInput.focus();
+            });
+            updateComposerAction();
+        }
+
+        if (isAppMode && composerModeBtn) {
+            composerModeBtn.addEventListener("click", (event) => {
+                event.stopPropagation();
+                setInferMode(inferMode === "local" ? "cloud" : "local");
+            });
+        }
+
+        if (menuBtn) {
+            menuBtn.addEventListener("pointerdown", (event) => {
+                event.stopPropagation();
+                if (isAppMode) return;
+                // Keep menu for quick smoke test.
+                runMcpSmokeTest();
+            });
+            menuBtn.addEventListener("click", (event) => {
+                event.stopPropagation();
+                if (isAppMode) return;
+                runMcpSmokeTest();
+            });
+            menuBtn.addEventListener("contextmenu", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (isAppMode) return;
+                window.debugMcpOpenSettings();
+            });
+        }
+
+        if (isAppMode && backToGreetingBtn) {
+            backToGreetingBtn.addEventListener("click", (event) => {
+                event.stopPropagation();
+                setAppScreen("greeting");
+                if (composerInput) {
+                    composerInput.blur();
+                }
+            });
+        }
+        if (rootEl && bottomEl) {
+            rootEl.addEventListener("click", (event) => {
+                if (isAppMode) return;
+                if (!bottomEl.contains(event.target)) {
+                    dismissAssistant();
+                }
+            });
+        }
+    </script>
+</body>
+</html>

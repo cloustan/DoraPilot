@@ -1,0 +1,37 @@
+# ---- Secrets / local config ----
+android/local.properties
+**/*.keystore
+**/*.jks
+.env
+.env.*
+
+# ---- Build outputs ----
+.gradle/
+android/.gradle/
+android/build/
+android/app/build/
+**/build/
+*.iml
+.idea/
+
+# ---- Dependencies ----
+node_modules/
+**/node_modules/
+.venv-hf/
+**/__pycache__/
+*.pyc
+
+# ---- Large local artifacts (not for VCS) ----
+local_models/
+archive/
+
+# ---- Stray nested clone of this same repo ----
+/DoraPilot/
+
+# ---- Media / capture artifacts ----
+*.mp4
+*.mov
+
+# ---- OS ----
+.DS_Store
+Thumbs.db

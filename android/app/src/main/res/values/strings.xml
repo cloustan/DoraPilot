@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Dora Pilot</string>
+    <string name="overlay_intro">Dora Pilot assistant is configured. Use Assistant settings and overlay permission to launch it.</string>
+    <string name="service_channel_name">Dora Pilot Background</string>
+    <string name="service_channel_description">Keeps Dora Pilot assistant ready for instant launch.</string>
+    <string name="service_notification_title">Dora Pilot is running</string>
+    <string name="service_notification_text">Assistant service is active and ready.</string>
+</resources>
