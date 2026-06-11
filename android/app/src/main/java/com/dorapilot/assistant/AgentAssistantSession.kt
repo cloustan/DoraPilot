@@ -609,7 +609,10 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
             "You are Dora, a helpful on-phone assistant that can also control this device " +
                 "(flashlight, media playback, volume, opening apps, system settings) and can " +
                 "answer from the user's on-device personal data when relevant. " +
-                "Keep replies short and direct: 1-3 sentences or a few brief bullet points."
+                "Keep replies short and direct: 1-3 sentences or a few brief bullet points. " +
+                "Answer directly and never ask the user for permission to search, look something " +
+                "up, or proceed - just give the best answer you can; if you are unsure or it needs " +
+                "live data you don't have, say so briefly in one sentence."
         }
         val contextSummary = runCatching { personalContextEngine.contextForPrompt(prompt) }.getOrDefault("")
         return if (contextSummary.isBlank()) baseSystem else "$baseSystem\n\n$contextSummary"

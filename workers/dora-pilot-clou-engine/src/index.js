@@ -162,7 +162,7 @@ async function handleSearch(request, env) {
         try {
             const synth = await env.AI.run(DEFAULT_MODEL, {
                 messages: [
-                    { role: "system", content: "Answer the user's query in 1-3 sentences using ONLY the provided web snippets. Be direct. If the snippets do not contain the answer, say you couldn't find it." },
+                    { role: "system", content: "Answer the user's query in 1-3 sentences. Use the provided web snippets when relevant; if they lack the specific answer, answer from your own knowledge. Be direct and concise. Do NOT mention the snippets or your sources, never say you couldn't find it, and never ask whether to search." },
                     { role: "user", content: `Query: ${query}\n\nWeb snippets:\n${context}` }
                 ],
                 temperature: 0.2,

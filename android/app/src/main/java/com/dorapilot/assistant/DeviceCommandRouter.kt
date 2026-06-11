@@ -59,9 +59,24 @@ class DeviceCommandRouter(
     }
 
     private fun wantsWebSearch(text: String): Boolean {
-        return text.contains("weather") || text.contains("forecast") || text.contains("temperature") ||
+        // Live/current indicators + explicit search commands.
+        if (text.contains("weather") || text.contains("forecast") || text.contains("temperature") ||
             text.contains("news") || text.startsWith("latest ") || text.contains(" latest ") ||
+            text.contains("right now") || text.contains("stock price") || text.contains("price of") ||
+            text.contains("who won ") || text.contains(" score") ||
             isInformationQuery(text)
+        ) {
+            return true
+        }
+        // Factual lookups - the worker grounds these and answers confidently,
+        // which beats the cautious cloud-chat fallback. Personal queries use
+        // contractions ("what's my…") and won't match these stricter prefixes.
+        val factualStarts = listOf(
+            "who is ", "who was ", "who are ", "what is the ", "what are the ",
+            "when is ", "when was ", "when did ", "when does ", "where is ", "where are ",
+            "how many ", "how much ", "how old ", "how tall ", "how far ", "what year "
+        )
+        return factualStarts.any { text.startsWith(it) }
     }
 
     /**
