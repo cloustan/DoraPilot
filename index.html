@@ -1032,6 +1032,50 @@
             flex: 0 0 auto;
         }
 
+        .quick-actions {
+            position: absolute;
+            left: 10px;
+            right: 10px;
+            bottom: calc(88px + var(--kb-offset, 0px));
+            z-index: 14;
+            display: none;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+            padding: 10px;
+            border-radius: 22px;
+            border: 1px solid rgba(205, 226, 255, 0.34);
+            background: rgba(244, 248, 255, 0.82);
+            backdrop-filter: blur(26px);
+            -webkit-backdrop-filter: blur(26px);
+            box-shadow: 0 16px 38px rgba(12, 28, 64, 0.24);
+            animation: riseIn 180ms ease-out both;
+        }
+
+        .quick-actions.is-open {
+            display: grid;
+        }
+
+        .quick-action-btn {
+            border: 1px solid rgba(74, 117, 214, 0.18);
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.72);
+            color: rgba(17, 34, 78, 0.94);
+            padding: 11px 12px;
+            font-size: 13px;
+            font-weight: 650;
+            line-height: 1.2;
+            text-align: left;
+            box-shadow: 0 6px 16px rgba(20, 40, 86, 0.10);
+        }
+
+        .quick-action-btn span {
+            display: block;
+            margin-top: 3px;
+            font-size: 11px;
+            font-weight: 500;
+            color: rgba(17, 34, 78, 0.58);
+        }
+
         @media (prefers-color-scheme: dark) {
             .composer-icon-btn {
                 color: rgba(245, 249, 255, 0.9);
@@ -1049,6 +1093,21 @@
                 border: 1px solid rgba(178, 202, 255, 0.24);
                 background: rgba(28, 40, 78, 0.52);
                 color: rgba(233, 242, 255, 0.9);
+            }
+
+            .quick-actions {
+                border-color: rgba(178, 202, 255, 0.22);
+                background: rgba(14, 24, 48, 0.82);
+            }
+
+            .quick-action-btn {
+                border-color: rgba(178, 202, 255, 0.18);
+                background: rgba(28, 40, 78, 0.62);
+                color: rgba(233, 242, 255, 0.94);
+            }
+
+            .quick-action-btn span {
+                color: rgba(233, 242, 255, 0.58);
             }
 
         }
@@ -1314,6 +1373,29 @@
                         <span class="wave-bar"></span>
                     </div>
                 </div>
+                <div id="quickActions" class="quick-actions" aria-hidden="true">
+                    <button class="quick-action-btn" type="button" data-quick-action="timeline">
+                        Dora Timeline <span>Chronological personal context</span>
+                    </button>
+                    <button class="quick-action-btn" type="button" data-quick-action="screen">
+                        Summarize Screen <span>Use active AssistStructure text</span>
+                    </button>
+                    <button class="quick-action-btn" type="button" data-quick-action="web">
+                        Web Search <span>Device-run free lookup</span>
+                    </button>
+                    <button class="quick-action-btn" type="button" data-quick-action="system">
+                        System Search <span>Search apps / phone</span>
+                    </button>
+                    <button class="quick-action-btn" type="button" data-quick-action="translate">
+                        Translate Clipboard <span>Translate copied text</span>
+                    </button>
+                    <button class="quick-action-btn" type="button" data-quick-action="proofread">
+                        Proofread Clipboard <span>Fix copied writing</span>
+                    </button>
+                    <button class="quick-action-btn" type="button" data-quick-action="local">
+                        Local Model Check <span>Inspect on-device AI setup</span>
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -1442,6 +1524,7 @@
                 composerInput.value = "";
                 composerInput.blur();
             }
+            closeQuickActions();
             updateComposerAction();
             applyVoiceState("idle");
         }
@@ -1504,6 +1587,7 @@
         const composerMicBtn = document.querySelector("#composerMicBtn");
         const composerSendBtn = document.querySelector("#composerSendBtn");
         const composerModeBtn = document.querySelector("#composerModeBtn");
+        const quickActions = document.querySelector("#quickActions");
         const chatList = document.querySelector("#chatList");
         const chatEmpty = document.querySelector("#chatEmpty");
         const isAppMode = document.body.classList.contains("app-mode");
@@ -1725,6 +1809,18 @@
             }
         }
 
+        function parseLoaderCheckResult(rawChunk) {
+            const marker = "loader check=";
+            const idx = `${rawChunk}`.indexOf(marker);
+            if (idx < 0) return null;
+            const jsonPart = `${rawChunk}`.slice(idx + marker.length).trim();
+            try {
+                return JSON.parse(jsonPart);
+            } catch (_error) {
+                return null;
+            }
+        }
+
         function openModelFileMenuOnce() {
             if (openedModelFileMenuForError) return;
             openedModelFileMenuForError = true;
@@ -1758,6 +1854,16 @@
                     if (channel === "local_ai" && result.error) {
                         openModelFileMenuOnce();
                     }
+                }
+                const loader = channel === "local_ai" ? parseLoaderCheckResult(chunk) : null;
+                if (loader) {
+                    const filesDir = loader.genai_resolved_files_dir || loader.genai_files_dir || "not found";
+                    const runtime = loader.genai_runtime_available ? "GenAI runtime available" : "GenAI runtime unavailable";
+                    const status = loader.ok === false ? "Local model check failed" : "Local model check";
+                    finalizeAssistant(
+                        `${status}: ${runtime}. Model files: ${filesDir}.`,
+                        { ok: loader.ok !== false, output: chunk, device_action: false }
+                    );
                 }
             }
             // Keep the in-memory log for copy/export without rendering a debug panel.
@@ -1993,6 +2099,7 @@
             if (!composerInput) return;
             const prompt = composerInput.value.trim();
             if (!prompt) return;
+            closeQuickActions();
             if (isAppMode) {
                 setAppScreen("chat");
             }
@@ -2004,6 +2111,78 @@
             updateComposerAction();
             if (shouldRefocus) {
                 composerInput.focus();
+            }
+        }
+
+        function setComposerDraft(value) {
+            if (!composerInput) return;
+            composerInput.value = value;
+            updateComposerAction();
+            focusComposerInput();
+        }
+
+        function openQuickActions() {
+            if (!quickActions) return;
+            quickActions.classList.add("is-open");
+            quickActions.setAttribute("aria-hidden", "false");
+        }
+
+        function closeQuickActions() {
+            if (!quickActions) return;
+            quickActions.classList.remove("is-open");
+            quickActions.setAttribute("aria-hidden", "true");
+        }
+
+        function toggleQuickActions() {
+            if (!quickActions) return;
+            if (quickActions.classList.contains("is-open")) {
+                closeQuickActions();
+            } else {
+                openQuickActions();
+            }
+        }
+
+        function submitQuickPrompt(prompt, label = "Working\u2026") {
+            closeQuickActions();
+            if (isAppMode) setAppScreen("chat");
+            appendChatMessage("user", prompt);
+            if (window.triggerThinkingHaptics) window.triggerThinkingHaptics();
+            if (isAppMode) showActionPending(label);
+            dispatchAgentAction("agent.infer", buildInferPayload(prompt));
+        }
+
+        function runQuickAction(action) {
+            switch (action) {
+                case "timeline":
+                    submitQuickPrompt("Dora Timeline", "Drawing Dora Timeline\u2026");
+                    break;
+                case "screen":
+                    submitQuickPrompt("summarize this screen", "Reading screen\u2026");
+                    break;
+                case "translate":
+                    submitQuickPrompt("translate my clipboard to English", "Translating clipboard\u2026");
+                    break;
+                case "proofread":
+                    submitQuickPrompt("proofread my clipboard", "Proofreading clipboard\u2026");
+                    break;
+                case "local":
+                    closeQuickActions();
+                    if (isAppMode) {
+                        setAppScreen("chat");
+                        showActionPending("Checking local model\u2026");
+                    }
+                    dispatchAgentAction("agent.local_loader_check");
+                    break;
+                case "system":
+                    closeQuickActions();
+                    setComposerDraft("search my phone for ");
+                    break;
+                case "web":
+                    closeQuickActions();
+                    setComposerDraft("search the web for ");
+                    break;
+                default:
+                    closeQuickActions();
             }
         }
 
@@ -2237,7 +2416,16 @@
         if (composerAddBtn) {
             composerAddBtn.addEventListener("click", (event) => {
                 event.stopPropagation();
-                focusComposerInput();
+                toggleQuickActions();
+            });
+        }
+
+        if (quickActions) {
+            quickActions.addEventListener("click", (event) => {
+                event.stopPropagation();
+                const button = event.target.closest("[data-quick-action]");
+                if (!button) return;
+                runQuickAction(button.getAttribute("data-quick-action"));
             });
         }
 
@@ -2351,6 +2539,7 @@
         if (isAppMode && backToGreetingBtn) {
             backToGreetingBtn.addEventListener("click", (event) => {
                 event.stopPropagation();
+                closeQuickActions();
                 setAppScreen("greeting");
                 if (composerInput) {
                     composerInput.blur();
@@ -2360,6 +2549,12 @@
 
         if (rootEl && bottomEl) {
             rootEl.addEventListener("click", (event) => {
+                if (quickActions && quickActions.classList.contains("is-open") &&
+                    !quickActions.contains(event.target) &&
+                    !event.target.closest("#composerAddBtn")
+                ) {
+                    closeQuickActions();
+                }
                 if (isAppMode) return;
                 if (!bottomEl.contains(event.target)) {
                     dismissAssistant();
