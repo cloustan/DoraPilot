@@ -6,9 +6,11 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.util.Log
 import org.json.JSONObject
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 /**
  * On-device AI notification summaries (a private, no-API-key take on "Sum Up"):
@@ -21,12 +23,37 @@ import java.util.concurrent.Executors
  * access; only acts when a local model is actually installed.
  */
 object NotificationSummarizer {
-    private val executor = Executors.newSingleThreadExecutor()
+    private val executor = Executors.newSingleThreadScheduledExecutor()
     private val lastFor = ConcurrentHashMap<String, Long>()
     private const val MIN_LEN = 120
     private const val DEBOUNCE_MS = 6_000L
     private const val CHANNEL_ID = "dora_summaries"
     private const val NOTIFICATION_BASE = 49_000
+    private const val TAG = "NotificationSummarizer"
+
+    // Keep the loaded model warm briefly so message bursts across chats reuse it,
+    // then release the native memory. All access stays on the single executor
+    // thread, so no extra locking is needed.
+    private const val ENGINE_TTL_MS = 2 * 60_000L
+    private var cachedEngine: LocalOnnxRuntimeEngine? = null
+    private var engineLastUsed = 0L
+
+    private fun acquireEngine(context: Context): LocalOnnxRuntimeEngine =
+        cachedEngine ?: LocalOnnxRuntimeEngine(context.applicationContext, BackendConfig.load())
+            .also { cachedEngine = it }
+
+    private fun touchEngine() {
+        engineLastUsed = System.currentTimeMillis()
+        executor.schedule(::releaseEngineIfIdle, ENGINE_TTL_MS + 1_000L, TimeUnit.MILLISECONDS)
+    }
+
+    private fun releaseEngineIfIdle() {
+        val engine = cachedEngine ?: return
+        if (System.currentTimeMillis() - engineLastUsed < ENGINE_TTL_MS) return
+        runCatching { engine.resetGenAiRuntime() }
+        cachedEngine = null
+        Log.i(TAG, "Released idle local engine")
+    }
 
     fun isEnabled(context: Context): Boolean =
         ContextSourcesConfig(context).isEnabled(ContextSourcesConfig.SUMMARIES)
@@ -60,7 +87,7 @@ object NotificationSummarizer {
 
         executor.execute {
             runCatching {
-                val engine = LocalOnnxRuntimeEngine(context, BackendConfig.load())
+                val engine = acquireEngine(context)
                 if (!engine.isConfigured()) return@runCatching
                 val system: String
                 val prompt: String
@@ -80,6 +107,7 @@ object NotificationSummarizer {
                         .put("max_tokens", if (isConversation) 110 else 80)
                         .put("temperature", 0.2)
                 )
+                touchEngine()
                 val summary = result.optString("output", "").trim().removeSurrounding("\"")
                 if (!result.optBoolean("ok", false) || summary.isBlank()) return@runCatching
                 val label = title.ifBlank { app.ifBlank { "Messages" } }
