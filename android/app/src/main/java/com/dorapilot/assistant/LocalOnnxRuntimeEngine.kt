@@ -213,7 +213,12 @@ class LocalOnnxRuntimeEngine(
                 .newInstance(state.model)
             try {
                 stage = "encoding prompt"
-                val encodedPrompt = encodePrompt(state.tokenizerClass, state.tokenizer, prompt)
+                val templatedPrompt = if (payload.optBoolean("raw_prompt", false)) {
+                    prompt
+                } else {
+                    buildChatMlPrompt(prompt, payload)
+                }
+                val encodedPrompt = encodePrompt(state.tokenizerClass, state.tokenizer, templatedPrompt)
                 val promptTokenCount = countEncodedTokens(encodedPrompt)
                 val maxLength = (promptTokenCount + maxTokens).coerceAtLeast(maxTokens)
                 stage = "setting max_length"
@@ -251,7 +256,15 @@ class LocalOnnxRuntimeEngine(
                         arrayOf(0L)
                     )
                     stage = "decoding output"
-                    val text = decodeGenerated(state.tokenizerClass, state.tokenizer, generated)
+                    // getSequence returns prompt + generated tokens; drop the prompt
+                    // so the reply does not echo the user's input.
+                    val newTokensOnly = if (generated is IntArray && promptTokenCount in 1 until generated.size) {
+                        generated.copyOfRange(promptTokenCount, generated.size)
+                    } else {
+                        generated
+                    }
+                    val text = decodeGenerated(state.tokenizerClass, state.tokenizer, newTokensOnly)
+                        .trim()
                     JSONObject()
                         .put("ok", true)
                         .put("mode", "genai")
@@ -277,6 +290,24 @@ class LocalOnnxRuntimeEngine(
                 .put("error", message)
                 .put("output", message)
                 .put("code", "genai_failed")
+        }
+    }
+
+    /**
+     * Wrap the user prompt in the ChatML format used by Qwen-family instruct
+     * models. Without this, the model does raw text continuation and emits
+     * unrelated completions instead of answering.
+     */
+    private fun buildChatMlPrompt(prompt: String, payload: JSONObject): String {
+        val system = payload.optString("system", "You are Dora, a concise on-device assistant.")
+        return buildString {
+            append("<|im_start|>system\n")
+            append(system)
+            append("<|im_end|>\n")
+            append("<|im_start|>user\n")
+            append(prompt)
+            append("<|im_end|>\n")
+            append("<|im_start|>assistant\n")
         }
     }
 

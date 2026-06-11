@@ -347,9 +347,13 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
                         } else {
                             val prompt = payload.optString("prompt", "").trim()
                             appendConversationHistory("user", prompt)
-                            // Multi-step / compound requests run the model-driven
-                            // MCP tool-calling agent loop.
-                            if (looksMultiStep(prompt)) {
+                            // Deterministic fast-path for clear control commands (reliable).
+                            if (tryAgentControl(prompt)) {
+                                return@execute
+                            }
+                            // Multi-step / compound requests AND conversational control
+                            // of skills/automations run the model-driven tool-calling loop.
+                            if (looksMultiStep(prompt) || isAgentControl(prompt)) {
                                 runAgentTaskLoop(JSONObject().put("goal", prompt))
                                 return@execute
                             }
@@ -809,9 +813,14 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
             "skill.create",
             "skill.list",
             "skill.run",
+            "skill.delete",
+            "skill.set_enabled",
             "automation.create",
             "automation.list",
             "automation.run_now",
+            "automation.delete",
+            "automation.set_enabled",
+            "automation.pause_all",
             "app_capabilities.search",
             "intent_routing_server.start_intent",
             "intent_routing_server.open_app",
@@ -875,6 +884,73 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
     private fun looksMultiStep(prompt: String): Boolean {
         val t = prompt.lowercase()
         return actionVerbs.count { t.contains(it) } >= 2
+    }
+
+    /**
+     * Deterministic handling of unambiguous control commands so they never
+     * depend on the model: list skills/automations, pause/resume all autonomy.
+     * Returns true if handled.
+     */
+    private fun tryAgentControl(prompt: String): Boolean {
+        val t = prompt.lowercase().trim()
+        val mentionsSkill = t.contains("skill")
+        val mentionsAuto = t.contains("automation") || t.contains("routine") || t.contains("job")
+        val isList = t.startsWith("list") || t.startsWith("show") || t.contains("what skills") ||
+            t.contains("what automations") || t.contains("my skills") || t.contains("my automations")
+        when {
+            (t.contains("pause") || t.contains("stop")) && (t.contains("everything") || t.contains("all")) -> {
+                localMcpBroker.callTool("automation.pause_all", JSONObject().put("paused", true))
+                emitAgentFinal("Paused all background automation.")
+                return true
+            }
+            t.contains("resume") && (t.contains("everything") || t.contains("all")) -> {
+                localMcpBroker.callTool("automation.pause_all", JSONObject().put("paused", false))
+                emitAgentFinal("Resumed background automation.")
+                return true
+            }
+            isList && mentionsSkill -> {
+                emitAgentFinal(formatList(localMcpBroker.callTool("skill.list", JSONObject()), "skills", "skill"))
+                return true
+            }
+            isList && mentionsAuto -> {
+                emitAgentFinal(formatList(localMcpBroker.callTool("automation.list", JSONObject()), "automations", "automation"))
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun formatList(result: JSONObject, arrayKey: String, label: String): String {
+        val arr = result.optJSONArray(arrayKey) ?: return "No $label found yet."
+        if (arr.length() == 0) return "You have no ${label}s yet."
+        val sb = StringBuilder("You have ${arr.length()} ${label}(s):")
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val name = o.optString("name", o.optString("title", "$label ${o.optLong("id")}"))
+            val paused = if (!o.optBoolean("enabled", true)) " [paused]" else ""
+            val last = o.optString("last_result", "").trim().take(60)
+            sb.append("\n\u2022 ").append(name).append(" (#").append(o.optLong("id")).append(")").append(paused)
+            if (last.isNotEmpty()) sb.append(" \u2014 ").append(last)
+        }
+        return sb.toString()
+    }
+
+    /** Conversational control of skills/automations ("list my skills", "pause everything"). */
+    private fun isAgentControl(prompt: String): Boolean {
+        val t = prompt.lowercase()
+        val nouns = listOf(
+            "skill", "skills", "automation", "automations", "routine", "routines",
+            "agent", "agents", "job", "jobs", "task", "tasks"
+        )
+        val verbs = listOf(
+            "list", "show", "run", "start", "stop", "pause", "resume", "disable",
+            "enable", "delete", "remove", "create", "add", "import", "schedule",
+            "turn off", "turn on"
+        )
+        val activity = t.contains("what did you do") || t.contains("what ran") ||
+            t.contains("what have you done") || t.contains("pause everything") ||
+            t.contains("stop everything") || t.contains("resume everything")
+        return (nouns.any { t.contains(it) } && verbs.any { t.contains(it) }) || activity
     }
 
     private fun requestCompletionWithRetry(

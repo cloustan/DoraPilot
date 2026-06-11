@@ -181,6 +181,31 @@ class LocalMcpBroker(
                     )
             )
             put(
+                JSONObject().put("name", "skill.set_enabled")
+                    .put("description", "Enable or pause a skill by id.")
+                    .put(
+                        "input_schema",
+                        JSONObject().put("type", "object")
+                            .put(
+                                "properties",
+                                JSONObject()
+                                    .put("id", JSONObject().put("type", "integer"))
+                                    .put("enabled", JSONObject().put("type", "boolean"))
+                            )
+                            .put("required", JSONArray().put("id"))
+                    )
+            )
+            put(
+                JSONObject().put("name", "automation.pause_all")
+                    .put("description", "Pause or resume ALL background autonomy (skills + automations). Use for 'pause everything' / 'resume everything'.")
+                    .put(
+                        "input_schema",
+                        JSONObject().put("type", "object")
+                            .put("properties", JSONObject().put("paused", JSONObject().put("type", "boolean")))
+                            .put("required", JSONArray().put("paused"))
+                    )
+            )
+            put(
                 JSONObject().put("name", "skill.delete")
                     .put("description", "Delete a skill by id.")
                     .put(
@@ -788,6 +813,7 @@ class LocalMcpBroker(
             "skill.run" -> skills.run(args.optLong("id"))
             "skill.delete" -> skills.delete(args.optLong("id"))
             "skill.set_enabled" -> skills.setEnabled(args.optLong("id"), args.optBoolean("enabled", true))
+            "automation.pause_all" -> automation.pauseAll(args.optBoolean("paused", true))
             "automation.create" -> automation.create(args)
             "automation.list" -> automation.list()
             "automation.run_now" -> automation.runNow(args.optLong("id"))

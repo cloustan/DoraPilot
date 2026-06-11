@@ -24,6 +24,10 @@ class HeartbeatWorker(
     override suspend fun doWork(): Result {
         return runCatching {
             val ctx = applicationContext
+            if (AutomationServer.isPaused(ctx)) {
+                Log.i(TAG, "Autonomy paused; skipping heartbeat")
+                return Result.success()
+            }
             val now = System.currentTimeMillis()
 
             val jobs = PersonalContextStore.listJobs(ctx).filter { it.optBoolean("enabled", false) }

@@ -116,7 +116,7 @@ android {
         buildConfigField(
             "int",
             "DORA_LOCAL_GENAI_MAX_TOKENS",
-            configValue("DORA_LOCAL_GENAI_MAX_TOKENS", "48")
+            configValue("DORA_LOCAL_GENAI_MAX_TOKENS", "256")
         )
         buildConfigField(
             "float",

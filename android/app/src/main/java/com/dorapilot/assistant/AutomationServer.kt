@@ -48,6 +48,13 @@ class AutomationServer(private val context: Context) {
         return JSONObject().put("ok", true).put("spoken", if (enabled) "Automation enabled." else "Automation paused.")
     }
 
+    /** Global kill switch for all background autonomy (skills + automations). */
+    fun pauseAll(paused: Boolean): JSONObject {
+        PersonalContextStore.memorySet(context, AUTONOMY_PAUSED_KEY, if (paused) "true" else "false")
+        return JSONObject().put("ok", true)
+            .put("spoken", if (paused) "All background automation is paused." else "Background automation resumed.")
+    }
+
     fun runNow(id: Long): JSONObject {
         val job = PersonalContextStore.jobById(context, id)
             ?: return JSONObject().put("ok", false).put("error", "No automation with id $id")
@@ -64,5 +71,12 @@ class AutomationServer(private val context: Context) {
         val h = m.groupValues[1].toIntOrNull() ?: 0
         val min = m.groupValues[2].toIntOrNull() ?: 0
         return (h * 60 + min).coerceIn(0, 1439)
+    }
+
+    companion object {
+        const val AUTONOMY_PAUSED_KEY = "autonomy_paused"
+
+        fun isPaused(context: Context): Boolean =
+            PersonalContextStore.memoryAll(context).optString(AUTONOMY_PAUSED_KEY, "false") == "true"
     }
 }
