@@ -52,8 +52,105 @@ object PersonalContextStore {
                 "trigger_type TEXT, interval_min INTEGER, at_minutes INTEGER, event TEXT, " +
                 "enabled INTEGER, last_run INTEGER, last_result TEXT, created INTEGER)"
         )
+        opened.execSQL(
+            "CREATE TABLE IF NOT EXISTS skills(" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, description TEXT, " +
+                "instructions TEXT, tools TEXT, trigger_type TEXT, interval_min INTEGER, " +
+                "at_minutes INTEGER, event TEXT, source TEXT, enabled INTEGER, " +
+                "last_run INTEGER, last_result TEXT, created INTEGER)"
+        )
         database = opened
         return opened
+    }
+
+    // ---- skills (ClawHub-style reusable agent skills) ----------------------
+
+    fun upsertSkill(
+        context: Context,
+        name: String,
+        description: String,
+        instructions: String,
+        tools: String,
+        triggerType: String,
+        intervalMin: Int,
+        atMinutes: Int,
+        event: String,
+        source: String
+    ): Long = runCatching {
+        val values = ContentValues().apply {
+            put("name", name)
+            put("description", description)
+            put("instructions", instructions)
+            put("tools", tools)
+            put("trigger_type", triggerType)
+            put("interval_min", intervalMin)
+            put("at_minutes", atMinutes)
+            put("event", event)
+            put("source", source)
+            put("enabled", 1)
+            put("last_run", 0L)
+            put("last_result", "")
+            put("created", System.currentTimeMillis())
+        }
+        db(context).insertWithOnConflict("skills", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+    }.getOrDefault(-1L)
+
+    fun listSkills(context: Context): List<JSONObject> = skillQuery(
+        context,
+        "SELECT id,name,description,instructions,tools,trigger_type,interval_min,at_minutes,event,source,enabled,last_run,last_result FROM skills ORDER BY id",
+        emptyArray()
+    )
+
+    fun skillById(context: Context, id: Long): JSONObject? = skillQuery(
+        context,
+        "SELECT id,name,description,instructions,tools,trigger_type,interval_min,at_minutes,event,source,enabled,last_run,last_result FROM skills WHERE id=?",
+        arrayOf(id.toString())
+    ).firstOrNull()
+
+    fun deleteSkill(context: Context, id: Long) {
+        runCatching { db(context).delete("skills", "id=?", arrayOf(id.toString())) }
+    }
+
+    fun setSkillEnabled(context: Context, id: Long, enabled: Boolean) {
+        runCatching {
+            val v = ContentValues().apply { put("enabled", if (enabled) 1 else 0) }
+            db(context).update("skills", v, "id=?", arrayOf(id.toString()))
+        }
+    }
+
+    fun markSkillRun(context: Context, id: Long, result: String) {
+        runCatching {
+            val v = ContentValues().apply {
+                put("last_run", System.currentTimeMillis())
+                put("last_result", result.take(2000))
+            }
+            db(context).update("skills", v, "id=?", arrayOf(id.toString()))
+        }
+    }
+
+    private fun skillQuery(context: Context, sql: String, args: Array<String>): List<JSONObject> {
+        val out = mutableListOf<JSONObject>()
+        runCatching {
+            db(context).rawQuery(sql, args).use { c ->
+                while (c.moveToNext()) {
+                    out += JSONObject()
+                        .put("id", c.getLong(0))
+                        .put("name", c.getString(1))
+                        .put("description", c.getString(2))
+                        .put("instructions", c.getString(3))
+                        .put("tools", c.getString(4))
+                        .put("trigger_type", c.getString(5))
+                        .put("interval_min", c.getInt(6))
+                        .put("at_minutes", c.getInt(7))
+                        .put("event", c.getString(8))
+                        .put("source", c.getString(9))
+                        .put("enabled", c.getInt(10) == 1)
+                        .put("last_run", c.getLong(11))
+                        .put("last_result", c.getString(12))
+                }
+            }
+        }
+        return out
     }
 
     // ---- automation jobs ---------------------------------------------------

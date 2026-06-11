@@ -92,6 +92,7 @@ class MainActivity : AppCompatActivity() {
     private val appCapabilityIndexer by lazy { com.dorapilot.assistant.AppCapabilityIndexer(this) }
     private val httpBridgeServer by lazy { com.dorapilot.assistant.HttpBridgeServer() }
     private val automationServer by lazy { com.dorapilot.assistant.AutomationServer(this) }
+    private val skillServer by lazy { com.dorapilot.assistant.SkillServer(this, httpBridgeServer) }
     private val contextTriageServer by lazy {
         ContextTriageScreenServer(
             activeScreenProvider = { buildMainScreenSnapshot() },
@@ -171,7 +172,8 @@ class MainActivity : AppCompatActivity() {
             webSearch = deviceWebSearchServer,
             appCapabilities = appCapabilityIndexer,
             httpBridge = httpBridgeServer,
-            automation = automationServer
+            automation = automationServer,
+            skills = skillServer
         )
     }
 

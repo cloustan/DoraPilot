@@ -27,10 +27,28 @@ class HeadlessAgentRunner(private val context: Context) {
         foregroundPackageProvider = { "" }
     )
 
-    /** Run [goal] to completion; returns a short result string for notification/log. */
-    fun run(goal: String, maxTurns: Int = 4): String {
+    /**
+     * Run [goal] to completion; returns a short result string. [allowedTools]
+     * optionally restricts the tool set (a skill's allowlist); [onStep] receives
+     * a human-readable progress line for each turn/tool call.
+     */
+    fun run(
+        goal: String,
+        maxTurns: Int = 4,
+        allowedTools: Set<String>? = null,
+        onStep: (String) -> Unit = {}
+    ): String {
         if (config.apiKey.isBlank()) return "Backend not configured."
-        val tools = backgroundTools()
+        val tools = backgroundTools().let { all ->
+            if (allowedTools.isNullOrEmpty()) all else {
+                val filtered = JSONArray()
+                for (i in 0 until all.length()) {
+                    val t = all.optJSONObject(i) ?: continue
+                    if (t.optJSONObject("function")?.optString("name") in allowedTools) filtered.put(t)
+                }
+                if (filtered.length() > 0) filtered else all
+            }
+        }
         val now = java.text.SimpleDateFormat("EEEE, MMM d yyyy, h:mm a", java.util.Locale.getDefault())
             .format(java.util.Date())
         val messages = JSONArray()
@@ -49,6 +67,7 @@ class HeadlessAgentRunner(private val context: Context) {
 
         var answer = ""
         for (turn in 1..maxTurns) {
+            onStep("Thinking (step $turn)\u2026")
             val completion = backendClient.complete(
                 MainBackendClient.CompletionRequest(
                     endpoint = config.endpoint,
@@ -77,6 +96,7 @@ class HeadlessAgentRunner(private val context: Context) {
                 val name = fn.optString("name", "").trim()
                 val args = runCatching { JSONObject(fn.optString("arguments", "{}")) }
                     .getOrDefault(JSONObject())
+                onStep("Using ${name.substringAfterLast('.')}\u2026")
                 val result = executeTool(name, args)
                 observation.append("- ").append(name).append(": ")
                     .append(result.toString().take(1200)).append('\n')

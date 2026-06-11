@@ -17,7 +17,8 @@ class LocalMcpBroker(
     private val webSearch: DeviceWebSearchServer,
     private val appCapabilities: AppCapabilityIndexer,
     private val httpBridge: HttpBridgeServer,
-    private val automation: AutomationServer
+    private val automation: AutomationServer,
+    private val skills: SkillServer
 ) {
     fun listTools(): JSONArray {
         return JSONArray().apply {
@@ -123,6 +124,70 @@ class LocalMcpBroker(
                                     .put("args", JSONObject().put("type", "object"))
                             )
                             .put("required", JSONArray().put("actionType"))
+                    )
+            )
+            put(
+                JSONObject()
+                    .put("name", "skill.import_url")
+                    .put(
+                        "description",
+                        "Import an OpenClaw/ClawHub skill from a raw SKILL.md URL so Dora can run it."
+                    )
+                    .put(
+                        "input_schema",
+                        JSONObject().put("type", "object")
+                            .put("properties", JSONObject().put("url", JSONObject().put("type", "string")))
+                            .put("required", JSONArray().put("url"))
+                    )
+            )
+            put(
+                JSONObject()
+                    .put("name", "skill.create")
+                    .put(
+                        "description",
+                        "Create a reusable skill. Args: name, description, instructions (the " +
+                            "workflow the agent should follow), optional trigger_type " +
+                            "(manual/interval/daily), interval_min, at (HH:mm), tools (allowlist)."
+                    )
+                    .put(
+                        "input_schema",
+                        JSONObject().put("type", "object")
+                            .put(
+                                "properties",
+                                JSONObject()
+                                    .put("name", JSONObject().put("type", "string"))
+                                    .put("description", JSONObject().put("type", "string"))
+                                    .put("instructions", JSONObject().put("type", "string"))
+                                    .put("trigger_type", JSONObject().put("type", "string"))
+                                    .put("interval_min", JSONObject().put("type", "integer"))
+                                    .put("at", JSONObject().put("type", "string"))
+                            )
+                            .put("required", JSONArray().put("name").put("instructions"))
+                    )
+            )
+            put(
+                JSONObject().put("name", "skill.list")
+                    .put("description", "List installed skills and their last result.")
+                    .put("input_schema", JSONObject().put("type", "object"))
+            )
+            put(
+                JSONObject().put("name", "skill.run")
+                    .put("description", "Run an installed skill by id (streams live step notifications).")
+                    .put(
+                        "input_schema",
+                        JSONObject().put("type", "object")
+                            .put("properties", JSONObject().put("id", JSONObject().put("type", "integer")))
+                            .put("required", JSONArray().put("id"))
+                    )
+            )
+            put(
+                JSONObject().put("name", "skill.delete")
+                    .put("description", "Delete a skill by id.")
+                    .put(
+                        "input_schema",
+                        JSONObject().put("type", "object")
+                            .put("properties", JSONObject().put("id", JSONObject().put("type", "integer")))
+                            .put("required", JSONArray().put("id"))
                     )
             )
             put(
@@ -717,6 +782,12 @@ class LocalMcpBroker(
                     packageName = args.optString("package", "").trim()
                 )
             }
+            "skill.import_url" -> skills.importUrl(args.optString("url", ""))
+            "skill.create" -> skills.create(args)
+            "skill.list" -> skills.list()
+            "skill.run" -> skills.run(args.optLong("id"))
+            "skill.delete" -> skills.delete(args.optLong("id"))
+            "skill.set_enabled" -> skills.setEnabled(args.optLong("id"), args.optBoolean("enabled", true))
             "automation.create" -> automation.create(args)
             "automation.list" -> automation.list()
             "automation.run_now" -> automation.runNow(args.optLong("id"))

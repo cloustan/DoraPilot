@@ -24,19 +24,32 @@ class HeartbeatWorker(
     override suspend fun doWork(): Result {
         return runCatching {
             val ctx = applicationContext
-            val jobs = PersonalContextStore.listJobs(ctx).filter { it.optBoolean("enabled", false) }
-            if (jobs.isEmpty()) return Result.success()
-            val runner = HeadlessAgentRunner(ctx)
             val now = System.currentTimeMillis()
-            for (job in jobs) {
-                if (!isDue(job, now)) continue
-                val id = job.optLong("id")
-                val title = job.optString("title", "Dora").ifBlank { "Dora" }
-                Log.i(TAG, "Running due job #$id: ${job.optString("goal").take(80)}")
-                val result = runCatching { runner.run(job.optString("goal", "")) }
-                    .getOrElse { "Job error: ${it.message}" }
-                PersonalContextStore.markJobRun(ctx, id, result)
-                notifyResult(ctx, id.toInt(), title, result)
+
+            val jobs = PersonalContextStore.listJobs(ctx).filter { it.optBoolean("enabled", false) }
+            if (jobs.isNotEmpty()) {
+                val runner = HeadlessAgentRunner(ctx)
+                for (job in jobs) {
+                    if (!isDue(job, now)) continue
+                    val id = job.optLong("id")
+                    val title = job.optString("title", "Dora").ifBlank { "Dora" }
+                    Log.i(TAG, "Running due job #$id: ${job.optString("goal").take(80)}")
+                    val result = runCatching { runner.run(job.optString("goal", "")) }
+                        .getOrElse { "Job error: ${it.message}" }
+                    PersonalContextStore.markJobRun(ctx, id, result)
+                    notifyResult(ctx, id.toInt(), title, result)
+                }
+            }
+
+            // Scheduled OpenClaw-style skills (stream their own step notifications).
+            val skills = PersonalContextStore.listSkills(ctx).filter { it.optBoolean("enabled", false) }
+            if (skills.isNotEmpty()) {
+                val skillServer = SkillServer(ctx, HttpBridgeServer())
+                for (skill in skills) {
+                    if (!isDue(skill, now)) continue
+                    Log.i(TAG, "Running due skill #${skill.optLong("id")}: ${skill.optString("name")}")
+                    runCatching { skillServer.execute(skill) }
+                }
             }
             Result.success()
         }.getOrElse {
