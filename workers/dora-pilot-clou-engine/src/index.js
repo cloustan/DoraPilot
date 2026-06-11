@@ -113,28 +113,35 @@ async function handleSearch(request, env) {
         } catch {}
     }
 
-    // DuckDuckGo Instant Answer API (fetched server-side; the worker has reliable
-    // internet even when the user's network blocks these domains directly).
+    // Real web results via the DuckDuckGo HTML endpoint (organic results with
+    // snippets) - covers current/dynamic queries the Instant Answer API misses.
     try {
-        const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
-        const ddg = await fetch(ddgUrl, { headers: { accept: "application/json" } });
-        if (ddg.ok) {
-            const d = await ddg.json();
-            if (d.AbstractText) {
-                results.push({ title: d.Heading || query, snippet: d.AbstractText, url: d.AbstractURL || "", source: "DuckDuckGo" });
-            }
-            if (d.Answer) {
-                results.push({ title: "Instant answer", snippet: `${d.Answer}`, url: "", source: "DuckDuckGo" });
-            }
-            for (const t of (d.RelatedTopics || []).slice(0, 6)) {
-                if (t && t.Text) {
-                    results.push({ title: (t.Text.split(" - ")[0] || "").slice(0, 80), snippet: t.Text, url: t.FirstURL || "", source: "DuckDuckGo" });
-                }
-            }
-        }
+        for (const r of await ddgHtml(query)) results.push(r);
     } catch {}
 
-    // Wikipedia summary when DuckDuckGo is sparse.
+    // DuckDuckGo Instant Answer API for entity abstracts (fetched server-side).
+    if (results.length < 3) {
+        try {
+            const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+            const ddg = await fetch(ddgUrl, { headers: { accept: "application/json" } });
+            if (ddg.ok) {
+                const d = await ddg.json();
+                if (d.AbstractText) {
+                    results.push({ title: d.Heading || query, snippet: d.AbstractText, url: d.AbstractURL || "", source: "DuckDuckGo" });
+                }
+                if (d.Answer) {
+                    results.push({ title: "Instant answer", snippet: `${d.Answer}`, url: "", source: "DuckDuckGo" });
+                }
+                for (const t of (d.RelatedTopics || []).slice(0, 4)) {
+                    if (t && t.Text) {
+                        results.push({ title: (t.Text.split(" - ")[0] || "").slice(0, 80), snippet: t.Text, url: t.FirstURL || "", source: "DuckDuckGo" });
+                    }
+                }
+            }
+        } catch {}
+    }
+
+    // Wikipedia summary when still sparse.
     if (results.length < 2) {
         try {
             const wikiUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query.replace(/\s+/g, "_"))}`;
@@ -154,11 +161,11 @@ async function handleSearch(request, env) {
     if (weather) {
         // The weather snippet is already a clean, direct answer - no synthesis needed.
         answer = `${weather.title}: ${weather.snippet}`;
-    } else if (results.length > 0) {
-        const context = results.slice(0, 4)
+    } else {
+        const context = results.slice(0, 5)
             .map((r) => `[${r.source}] ${r.title}: ${r.snippet}`)
             .join("\n")
-            .slice(0, MAX_CONTENT_CHARS);
+            .slice(0, MAX_CONTENT_CHARS) || "(no web results found)";
         try {
             const synth = await env.AI.run(DEFAULT_MODEL, {
                 messages: [
@@ -178,6 +185,55 @@ async function handleSearch(request, env) {
         answer,
         results: results.slice(0, 6)
     });
+}
+
+async function ddgHtml(query) {
+    const out = [];
+    const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    const resp = await fetch(url, {
+        method: "POST",
+        headers: {
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+            "accept": "text/html",
+            "content-type": "application/x-www-form-urlencoded"
+        },
+        body: `q=${encodeURIComponent(query)}`
+    });
+    if (!resp.ok) return out;
+    const html = await resp.text();
+    // Extract titles and snippets independently (robust to attribute ordering),
+    // then pair them by position.
+    const titles = [...html.matchAll(/class="result__a"[^>]*>([\s\S]*?)<\/a>/g)].map((m) => stripTags(m[1]));
+    const snippets = [...html.matchAll(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g)].map((m) => stripTags(m[1]));
+    const n = Math.min(titles.length, snippets.length, 6);
+    for (let i = 0; i < n; i += 1) {
+        if (titles[i] && snippets[i]) {
+            out.push({ title: titles[i], snippet: snippets[i], url: "", source: "DuckDuckGo" });
+        }
+    }
+    return out;
+}
+
+function decodeDdgUrl(href) {
+    try {
+        const match = /[?&]uddg=([^&]+)/.exec(href);
+        if (match) return decodeURIComponent(match[1]);
+    } catch {}
+    return href.startsWith("//") ? `https:${href}` : href;
+}
+
+function stripTags(html) {
+    return `${html || ""}`
+        .replace(/<[^>]+>/g, "")
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&#x27;/g, "'")
+        .replace(/&#39;/g, "'")
+        .replace(/&nbsp;/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
 }
 
 async function handleTts(request, env) {

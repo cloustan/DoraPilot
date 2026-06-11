@@ -36,7 +36,10 @@ class DeviceCommandRouter(
         // Plain question with no device command: fetch a live web answer when it
         // needs one (weather/news/etc.), otherwise let the cloud assistant answer.
         if (isQuestion && !hasActionCue) {
-            if (wantsWebSearch(text)) runWebSearch(prompt)?.let { return it }
+            // Personal questions ("what's my battery / do I have messages") need
+            // on-device context -> cloud. Everything else is answered by the
+            // worker-backed search (grounded web result or model knowledge).
+            if (!isPersonalContextQuery(text)) runWebSearch(prompt)?.let { return it }
             return null
         }
 
@@ -52,10 +55,16 @@ class DeviceCommandRouter(
         systemSearchAction(prompt, text)?.let { return it }
         openApp(prompt, text)?.let { return it }
         textIntelligence?.parseAndRun(prompt)?.let { return it }
-        if (wantsWebSearch(text)) {
+        if (!isPersonalContextQuery(text) && wantsWebSearch(text)) {
             runWebSearch(prompt)?.let { return it }
         }
         return null
+    }
+
+    /** Queries about the user's own device/data, which need on-device context. */
+    private fun isPersonalContextQuery(text: String): Boolean {
+        return text.startsWith("my ") || text.contains(" my ") ||
+            text.contains("do i have") || text.contains("am i ") || text.contains("i have")
     }
 
     private fun wantsWebSearch(text: String): Boolean {
@@ -68,15 +77,19 @@ class DeviceCommandRouter(
         ) {
             return true
         }
-        // Factual lookups - the worker grounds these and answers confidently,
-        // which beats the cautious cloud-chat fallback. Personal queries use
-        // contractions ("what's my…") and won't match these stricter prefixes.
-        val factualStarts = listOf(
-            "who is ", "who was ", "who are ", "what is the ", "what are the ",
+        // Lookup-style statements/questions that should be answered from the web
+        // (the worker grounds these and always returns an answer).
+        val lookupStarts = listOf(
+            "who is ", "who was ", "who are ", "what is the ", "what are the ", "what is a ",
             "when is ", "when was ", "when did ", "when does ", "where is ", "where are ",
-            "how many ", "how much ", "how old ", "how tall ", "how far ", "what year "
+            "how many ", "how much ", "how old ", "how tall ", "how far ", "what year ",
+            "best ", "top ", "find ", "show me ", "how to ", "how do ", "how does ",
+            "where can ", "where do ", "list of ", "examples of ", "ideas for ",
+            "recommend ", "suggest ", "compare ", "what year "
         )
-        return factualStarts.any { text.startsWith(it) }
+        return lookupStarts.any { text.startsWith(it) } ||
+            text.contains("recommend") || text.contains("difference between") ||
+            text.contains("examples of") || text.contains("near me")
     }
 
     /**
