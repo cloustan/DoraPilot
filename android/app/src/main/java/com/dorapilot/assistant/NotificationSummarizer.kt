@@ -101,12 +101,35 @@ object NotificationSummarizer {
                 val summary = result.optString("output", "").trim().removeSurrounding("\"")
                 cancelWorking(context, id)
                 if (!result.optBoolean("ok", false) || summary.isBlank()) return@execute
+                // Echo guard: small models sometimes parrot the prompt or copy the
+                // input instead of condensing. Keep the original in that case.
+                if (looksLikeEcho(summary, text)) return@execute
                 postSummary(context, id, pkg, label, summary)
                 onReplace?.let { runCatching { it() } }
             }.onFailure {
                 cancelWorking(context, id)
             }
         }
+    }
+
+    /**
+     * Detects failed generations where the model echoed the prompt scaffold or
+     * copied the input rather than summarizing. Posting those (and cancelling
+     * the original) would replace a real notification with junk.
+     */
+    private fun looksLikeEcho(summary: String, source: String): Boolean {
+        val s = summary.lowercase()
+        // Our own prompt scaffolding leaking into the output.
+        if (s.startsWith("notification from") || s.startsWith("message from") ||
+            s.startsWith("conversation in") || s.contains("one-sentence summary")
+        ) {
+            return true
+        }
+        // Near-verbatim copy: the summary's opening appears verbatim in the source.
+        val probe = summary.take(48).lowercase()
+        if (probe.length >= 24 && source.lowercase().contains(probe)) return true
+        // No compression achieved on a long source.
+        return summary.length >= source.length && source.length >= MIN_LEN
     }
 
     /** Ongoing spinner notification shown while the on-device model is working. */
