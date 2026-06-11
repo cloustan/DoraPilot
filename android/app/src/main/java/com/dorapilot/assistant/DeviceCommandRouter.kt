@@ -17,7 +17,10 @@ class DeviceCommandRouter(
     private val appActions: AppActionsServer? = null,
     private val textIntelligence: TextIntelligenceServer? = null,
     private val screenIntelligence: ScreenIntelligenceServer? = null,
-    private val timelineIntelligence: TimelineIntelligenceServer? = null
+    private val timelineIntelligence: TimelineIntelligenceServer? = null,
+    private val webSearch: DeviceWebSearchServer? = null,
+    private val contactResolver: ((String) -> String?)? = null,
+    private val deviceSearchFallback: ((String) -> JSONObject)? = null
 ) {
     fun tryHandle(rawPrompt: String): JSONObject? {
         val prompt = rawPrompt.trim()
@@ -29,18 +32,21 @@ class DeviceCommandRouter(
         // unless they also carry a clear imperative cue ("can you turn on ...").
         val firstWord = text.substringBefore(' ')
         val isQuestion = firstWord in QUESTION_STARTS
-        val hasActionCue = ACTION_CUES.any { text.contains(it) }
         timelineAction(prompt, text)?.let { return it }
         screenAction(prompt, text)?.let { return it }
-        if (isQuestion && !hasActionCue) return null
 
         flashlight(text)?.let { return it }
         volume(text)?.let { return it }
         appAction(prompt, text)?.let { return it }
+        communicationAction(prompt, text)?.let { return it }
         media(text)?.let { return it }
         quickSettings(text)?.let { return it }
+        systemSearchAction(prompt, text)?.let { return it }
         openApp(prompt, text)?.let { return it }
         textIntelligence?.parseAndRun(prompt)?.let { return it }
+        if (isQuestion || isInformationQuery(text)) {
+            webSearch?.search(prompt)?.let { return it.put("device_action", false) }
+        }
         return null
     }
 
@@ -80,6 +86,41 @@ class DeviceCommandRouter(
             else -> null
         } ?: return null
         return result.put("device_action", false)
+    }
+
+    private fun communicationAction(originalPrompt: String, text: String): JSONObject? {
+        val actions = appActions ?: return null
+        val callTarget = when {
+            text.startsWith("call ") -> originalPrompt.substringAfter("call", "").trim()
+            text.startsWith("dial ") -> originalPrompt.substringAfter("dial", "").trim()
+            else -> ""
+        }
+        if (callTarget.isNotBlank()) {
+            val phone = extractPhone(callTarget) ?: contactResolver?.invoke(cleanContactName(callTarget))
+            if (phone.isNullOrBlank()) {
+                return JSONObject()
+                    .put("ok", false)
+                    .put("output", "I need a phone number, or enable Contacts in Personal context so I can find ${cleanContactName(callTarget)}.")
+                    .put("device_action", true)
+            }
+            return wrap(actions.dialNumber(phone))
+        }
+
+        val textMatch = Regex("^(?:text|message|sms)\\s+(.+?)(?:\\s+(?:message|saying|that|body)\\s+(.+))?$", RegexOption.IGNORE_CASE)
+            .find(originalPrompt.trim())
+        if (textMatch != null) {
+            val target = textMatch.groupValues[1].trim()
+            val body = textMatch.groupValues.getOrNull(2)?.trim().orEmpty()
+            val phone = extractPhone(target) ?: contactResolver?.invoke(cleanContactName(target))
+            if (phone.isNullOrBlank()) {
+                return JSONObject()
+                    .put("ok", false)
+                    .put("output", "I need a phone number, or enable Contacts in Personal context so I can message ${cleanContactName(target)}.")
+                    .put("device_action", true)
+            }
+            return wrap(actions.sendSms(phone, body))
+        }
+        return null
     }
 
     private fun flashlight(text: String): JSONObject? {
@@ -169,7 +210,61 @@ class DeviceCommandRouter(
             return wrap(actions.openCamera(true))
         }
 
+        // Calendar event. Keep parsing conservative: prefill title and only add
+        // time when "today/tomorrow at <time>" is obvious.
+        if (text.startsWith("create calendar event") || text.startsWith("add calendar event") ||
+            text.startsWith("schedule ")
+        ) {
+            val title = extractAfter(originalPrompt, listOf("create calendar event", "add calendar event", "schedule"))
+                .ifBlank { "New event" }
+            val start = parseRelativeEventStart(text)
+            val end = if (start > 0) start + 60L * 60L * 1000L else 0L
+            return wrap(actions.createCalendarEvent(title, start, end, ""))
+        }
+
+        Regex("\\b(?:open|go to)\\s+((?:https?://)?[A-Za-z0-9.-]+\\.[A-Za-z]{2,}(?:/\\S*)?)", RegexOption.IGNORE_CASE)
+            .find(originalPrompt)?.groupValues?.getOrNull(1)?.let { url ->
+                return wrap(actions.openUrl(url))
+            }
+
         return null
+    }
+
+    private fun systemSearchAction(originalPrompt: String, text: String): JSONObject? {
+        val query = when {
+            text.startsWith("search my phone for ") -> originalPrompt.substringAfter("search my phone for", "").trim()
+            text.startsWith("system search ") -> originalPrompt.substringAfter("system search", "").trim()
+            text.startsWith("search apps for ") -> originalPrompt.substringAfter("search apps for", "").trim()
+            text == "open android search" || text == "open system search" -> ""
+            else -> return null
+        }
+        val result = intentRouter.searchDevice(query)
+        if (result.optBoolean("ok", false)) return wrap(result)
+        if (query.isNotBlank()) {
+            val fallback = deviceSearchFallback?.invoke(query)
+            if (fallback != null) {
+                val results = fallback.optJSONArray("results")
+                val names = (0 until minOf(results?.length() ?: 0, 5)).mapNotNull { idx ->
+                    results?.optJSONObject(idx)?.let { item ->
+                        item.optString("label", item.optString("short_label", item.optString("app_label", "")))
+                            .takeIf(String::isNotBlank)
+                    }
+                }
+                return JSONObject()
+                    .put("ok", true)
+                    .put(
+                        "output",
+                        if (names.isNotEmpty()) {
+                            "Android search is unavailable, but Dora found: ${names.joinToString(", ")}."
+                        } else {
+                            "Android search is unavailable and Dora did not find matching installed apps."
+                        }
+                    )
+                    .put("device_action", false)
+                    .put("detail", fallback)
+            }
+        }
+        return wrap(result)
     }
 
     private fun media(text: String): JSONObject? {
@@ -252,6 +347,19 @@ class DeviceCommandRouter(
         return if (found && total > 0) total else null
     }
 
+    private fun parseRelativeEventStart(text: String): Long {
+        val time = parseClockTime(text) ?: return 0L
+        val now = java.time.ZonedDateTime.now()
+        val base = when {
+            text.contains("tomorrow") -> now.plusDays(1)
+            text.contains("today") -> now
+            else -> now
+        }
+        return base.withHour(time.first).withMinute(time.second).withSecond(0).withNano(0)
+            .toInstant()
+            .toEpochMilli()
+    }
+
     private fun extractAfter(prompt: String, markers: List<String>): String {
         val lower = prompt.lowercase()
         for (marker in markers) {
@@ -274,6 +382,30 @@ class DeviceCommandRouter(
         return ""
     }
 
+    private fun extractPhone(text: String): String? {
+        return Regex("\\+?\\d[\\d\\s().-]{6,}\\d")
+            .find(text)
+            ?.value
+            ?.filter { it.isDigit() || it == '+' }
+    }
+
+    private fun cleanContactName(value: String): String {
+        return value
+            .replace(Regex("\\b(message|saying|that|body)\\b.*", RegexOption.IGNORE_CASE), "")
+            .trim()
+            .trim('"', '\'', '.', ',', ':')
+    }
+
+    private fun isInformationQuery(text: String): Boolean {
+        return text.startsWith("tell me about ") ||
+            text.startsWith("explain ") ||
+            text.startsWith("define ") ||
+            text.startsWith("look up ") ||
+            text.startsWith("search the web for ") ||
+            text.startsWith("web search ") ||
+            text.startsWith("latest ")
+    }
+
     companion object {
         private val QUESTION_STARTS = setOf(
             "what", "whats", "how", "why", "who", "whom", "whose", "when", "where",
@@ -290,7 +422,9 @@ class DeviceCommandRouter(
             "screen", "page", "what's on", "what is on", "what am i looking at",
             "dora timeline", "timeline my day", "what happened today",
             "make this", "make it", "take a photo", "take a picture",
-            "record a video", "wake me", "remind", "dial", "call ", "text ", "send "
+            "record a video", "wake me", "remind", "dial", "call ", "text ", "send ",
+            "search my phone", "system search", "search apps", "create calendar event",
+            "add calendar event", "schedule "
         )
     }
 

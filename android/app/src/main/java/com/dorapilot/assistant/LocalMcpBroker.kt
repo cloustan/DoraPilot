@@ -13,7 +13,8 @@ class LocalMcpBroker(
     private val appActions: AppActionsServer,
     private val textIntelligence: TextIntelligenceServer,
     private val screenIntelligence: ScreenIntelligenceServer,
-    private val timelineIntelligence: TimelineIntelligenceServer
+    private val timelineIntelligence: TimelineIntelligenceServer,
+    private val webSearch: DeviceWebSearchServer
 ) {
     fun listTools(): JSONArray {
         return JSONArray().apply {
@@ -136,7 +137,30 @@ class LocalMcpBroker(
             put(
                 JSONObject()
                     .put("name", "intent_routing_server.search_web")
-                    .put("description", "Open browser search for query text.")
+                    .put("description", "Open Android/browser web search UI for query text.")
+                    .put(
+                        "input_schema",
+                        JSONObject()
+                            .put("type", "object")
+                            .put("properties", JSONObject().put("query", JSONObject().put("type", "string")))
+                            .put("required", JSONArray().put("query"))
+                    )
+            )
+            put(
+                JSONObject()
+                    .put("name", "intent_routing_server.search_device")
+                    .put("description", "Open Android global/launcher search UI for a phone/app search query when the launcher exposes a public search intent.")
+                    .put(
+                        "input_schema",
+                        JSONObject()
+                            .put("type", "object")
+                            .put("properties", JSONObject().put("query", JSONObject().put("type", "string")))
+                    )
+            )
+            put(
+                JSONObject()
+                    .put("name", "device_web_search.search")
+                    .put("description", "Run free/no-key web lookup from the Android device using DuckDuckGo Instant Answer and Wikipedia fallback. Actions should not use this; factual questions can.")
                     .put(
                         "input_schema",
                         JSONObject()
@@ -372,6 +396,42 @@ class LocalMcpBroker(
             )
             put(
                 JSONObject()
+                    .put("name", "app_actions.dial_number")
+                    .put("description", "Open the phone dialer for a number. Does not place the call automatically.")
+                    .put(
+                        "input_schema",
+                        JSONObject().put("type", "object").put(
+                            "properties", JSONObject().put("phone", JSONObject().put("type", "string"))
+                        ).put("required", JSONArray().put("phone"))
+                    )
+            )
+            put(
+                JSONObject()
+                    .put("name", "app_actions.send_sms")
+                    .put("description", "Open SMS composer for a number and optional body. Does not send automatically.")
+                    .put(
+                        "input_schema",
+                        JSONObject().put("type", "object").put(
+                            "properties",
+                            JSONObject()
+                                .put("phone", JSONObject().put("type", "string"))
+                                .put("body", JSONObject().put("type", "string"))
+                        ).put("required", JSONArray().put("phone"))
+                    )
+            )
+            put(
+                JSONObject()
+                    .put("name", "app_actions.open_url")
+                    .put("description", "Open a URL in the browser.")
+                    .put(
+                        "input_schema",
+                        JSONObject().put("type", "object").put(
+                            "properties", JSONObject().put("url", JSONObject().put("type", "string"))
+                        ).put("required", JSONArray().put("url"))
+                    )
+            )
+            put(
+                JSONObject()
                     .put("name", "text_intelligence.transform")
                     .put("description", "Writing tools on text: summarize, key_points, action_items, proofread, shorter, longer, professional, casual, polite, translate, compose. Provide mode and text (and language for translate).")
                     .put(
@@ -491,6 +551,11 @@ class LocalMcpBroker(
                 val query = args.optString("query", "").trim()
                 intentRouter.searchWeb(query)
             }
+            "intent_routing_server.search_device" -> {
+                val query = args.optString("query", "").trim()
+                intentRouter.searchDevice(query)
+            }
+            "device_web_search.search" -> webSearch.search(args.optString("query", "").trim())
             "intent_routing_server.open_maps_query" -> {
                 val query = args.optString("query", "").trim()
                 intentRouter.openMapsQuery(query)
@@ -562,6 +627,12 @@ class LocalMcpBroker(
                     else -> appActions.playOnYouTube(query)
                 }
             }
+            "app_actions.dial_number" -> appActions.dialNumber(args.optString("phone", "").trim())
+            "app_actions.send_sms" -> appActions.sendSms(
+                args.optString("phone", "").trim(),
+                args.optString("body", "")
+            )
+            "app_actions.open_url" -> appActions.openUrl(args.optString("url", "").trim())
             "text_intelligence.transform" -> {
                 val modeName = args.optString("mode", "summarize").trim().uppercase()
                 val mode = runCatching { TextIntelligenceServer.Mode.valueOf(modeName) }

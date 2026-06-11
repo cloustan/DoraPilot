@@ -3,6 +3,7 @@ package com.dorapilot.assistant
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.app.SearchManager
 import org.json.JSONObject
 
 class IntentRoutingServer(
@@ -30,13 +31,53 @@ class IntentRoutingServer(
         val q = query.trim()
         if (q.isEmpty()) return JSONObject().put("ok", false).put("error", "query is required")
         return runCatching {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=${Uri.encode(q)}"))
+            val intent = Intent(Intent.ACTION_WEB_SEARCH)
+                .putExtra(SearchManager.QUERY, q)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
             JSONObject().put("ok", true).put("query", q)
         }.getOrElse { error ->
-            JSONObject().put("ok", false).put("error", error.message ?: "web search failed")
+            runCatching {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=${Uri.encode(q)}"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
+                JSONObject().put("ok", true).put("query", q).put("fallback", "browser")
+            }.getOrElse { browserError ->
+                JSONObject().put("ok", false).put("error", browserError.message ?: error.message ?: "web search failed")
+            }
         }
+    }
+
+    fun searchDevice(query: String): JSONObject {
+        val q = query.trim()
+        val queryForIntent = q.ifBlank { " " }
+        val candidates = listOf(
+            Intent(SearchManager.INTENT_ACTION_GLOBAL_SEARCH)
+                .putExtra(SearchManager.QUERY, queryForIntent),
+            Intent(Intent.ACTION_SEARCH)
+                .putExtra(SearchManager.QUERY, queryForIntent),
+            Intent(Intent.ACTION_VIEW, Uri.parse("android-app://com.google.android.googlequicksearchbox/search"))
+                .putExtra(SearchManager.QUERY, queryForIntent)
+        )
+        candidates.forEach { candidate ->
+            val result = runCatching {
+                candidate.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(candidate)
+                JSONObject()
+                    .put("ok", true)
+                    .put("query", q)
+                    .put("spoken", if (q.isBlank()) "Opening Android search." else "Opening Android search for $q.")
+                    .put("intent_action", candidate.action ?: "view")
+            }.getOrNull()
+            if (result != null) return result
+        }
+        return JSONObject()
+            .put("ok", false)
+            .put("query", q)
+            .put(
+                "error",
+                "This launcher/search provider does not expose a public Android search intent."
+            )
     }
 
     fun openMapsQuery(query: String): JSONObject {
@@ -94,7 +135,10 @@ class IntentRoutingServer(
             "web_search" -> {
                 val query = args.optString("query", "").trim()
                 if (query.isEmpty()) return JSONObject().put("ok", false).put("error", "args.query required")
-                Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=${Uri.encode(query)}"))
+                Intent(Intent.ACTION_WEB_SEARCH).putExtra(SearchManager.QUERY, query)
+            }
+            "device_search", "global_search", "system_search" -> {
+                return searchDevice(args.optString("query", "").trim())
             }
             "open_maps_query" -> {
                 val query = args.optString("query", "").trim()

@@ -113,6 +113,27 @@ class AppActionsServer(private val context: Context) {
         return launch(Intent(Intent.ACTION_VIEW, Uri.parse(normalized)), "Opening $normalized.")
     }
 
+    fun dialNumber(phone: String): JSONObject {
+        val normalized = phone.filter { it.isDigit() || it == '+' || it == '*' || it == '#' }
+        if (normalized.isBlank()) return JSONObject().put("ok", false).put("error", "phone number is required")
+        return launch(
+            Intent(Intent.ACTION_DIAL, Uri.parse("tel:$normalized")),
+            "Opening dialer for $normalized."
+        ) { put("phone", normalized) }
+    }
+
+    fun sendSms(phone: String, body: String): JSONObject {
+        val normalized = phone.filter { it.isDigit() || it == '+' }
+        if (normalized.isBlank()) return JSONObject().put("ok", false).put("error", "phone number is required")
+        return launch(
+            Intent(Intent.ACTION_VIEW, Uri.parse("sms:$normalized")).putExtra("sms_body", body),
+            "Opening message composer for $normalized."
+        ) {
+            put("phone", normalized)
+            put("body", body)
+        }
+    }
+
     private fun humanDuration(seconds: Int): String {
         val h = seconds / 3600
         val m = (seconds % 3600) / 60

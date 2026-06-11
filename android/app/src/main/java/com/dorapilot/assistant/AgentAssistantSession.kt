@@ -91,6 +91,7 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
     )
     private val deviceControlServer = DeviceControlServer(context)
     private val appActionsServer = AppActionsServer(context)
+    private val deviceWebSearchServer = DeviceWebSearchServer()
     private val textIntelligenceServer = TextIntelligenceServer(
         context = context,
         backendClient = mainBackendClient,
@@ -117,7 +118,10 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
         appActions = appActionsServer,
         textIntelligence = textIntelligenceServer,
         screenIntelligence = screenIntelligenceServer,
-        timelineIntelligence = timelineIntelligenceServer
+        timelineIntelligence = timelineIntelligenceServer,
+        webSearch = deviceWebSearchServer,
+        contactResolver = { name -> personalContextEngine.resolveContactNumber(name) },
+        deviceSearchFallback = { query -> capabilityScanner.findTools(query, 8) }
     )
     private val localMcpBroker = LocalMcpBroker(
         scanner = capabilityScanner,
@@ -129,7 +133,8 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
         appActions = appActionsServer,
         textIntelligence = textIntelligenceServer,
         screenIntelligence = screenIntelligenceServer,
-        timelineIntelligence = timelineIntelligenceServer
+        timelineIntelligence = timelineIntelligenceServer,
+        webSearch = deviceWebSearchServer
     )
 
     @Volatile

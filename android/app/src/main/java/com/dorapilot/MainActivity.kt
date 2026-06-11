@@ -108,6 +108,7 @@ class MainActivity : AppCompatActivity() {
     }
     private val deviceControlServer by lazy { com.dorapilot.assistant.DeviceControlServer(this) }
     private val appActionsServer by lazy { com.dorapilot.assistant.AppActionsServer(this) }
+    private val deviceWebSearchServer by lazy { com.dorapilot.assistant.DeviceWebSearchServer() }
     private val textIntelligenceServer by lazy {
         com.dorapilot.assistant.TextIntelligenceServer(
             context = this,
@@ -136,7 +137,10 @@ class MainActivity : AppCompatActivity() {
             appActions = appActionsServer,
             textIntelligence = textIntelligenceServer,
             screenIntelligence = screenIntelligenceServer,
-            timelineIntelligence = timelineIntelligenceServer
+            timelineIntelligence = timelineIntelligenceServer,
+            webSearch = deviceWebSearchServer,
+            contactResolver = { name -> personalContextEngine.resolveContactNumber(name) },
+            deviceSearchFallback = { query -> capabilityScanner.findTools(query, 8) }
         )
     }
     private val personalContextEngine by lazy {
@@ -157,7 +161,8 @@ class MainActivity : AppCompatActivity() {
             appActions = appActionsServer,
             textIntelligence = textIntelligenceServer,
             screenIntelligence = screenIntelligenceServer,
-            timelineIntelligence = timelineIntelligenceServer
+            timelineIntelligence = timelineIntelligenceServer,
+            webSearch = deviceWebSearchServer
         )
     }
 
