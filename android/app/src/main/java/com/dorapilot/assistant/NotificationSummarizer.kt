@@ -115,7 +115,7 @@ object NotificationSummarizer {
             @Suppress("DEPRECATION") android.app.Notification.Builder(context)
         }
         val notification = builder
-            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setSmallIcon(com.dorapilot.R.drawable.ic_stat_dora)
             .setContentTitle(title)
             .setContentText("Summarizing on-device\u2026")
             .setProgress(0, 0, true)
@@ -151,12 +151,35 @@ object NotificationSummarizer {
         } else {
             @Suppress("DEPRECATION") android.app.Notification.Builder(context)
         }
-        builder.setSmallIcon(android.R.drawable.ic_dialog_email)
+        builder.setSmallIcon(com.dorapilot.R.drawable.ic_stat_dora)
             .setContentTitle(title)
             .setContentText(summary)
-            .setStyle(android.app.Notification.BigTextStyle().bigText(summary))
+            // Liability marker: shown in the header (collapsed) and as the
+            // footer of the expanded view.
+            .setSubText("AI generated")
+            .setStyle(
+                android.app.Notification.BigTextStyle()
+                    .bigText(summary)
+                    .setSummaryText("AI-generated summary \u00b7 may contain mistakes")
+            )
             .setAutoCancel(true)
+        // Lead with the source app's icon so the summary reads as belonging to
+        // the conversation, not to Dora.
+        appIconBitmap(context, pkg)?.let {
+            builder.setLargeIcon(android.graphics.drawable.Icon.createWithBitmap(it))
+        }
         if (contentIntent != null) builder.setContentIntent(contentIntent)
         nm.notify(NOTIFICATION_BASE + (id and 0xFFFF), builder.build())
     }
+
+    /** Source app icon rendered to a bitmap for use as the large icon. */
+    private fun appIconBitmap(context: Context, pkg: String): android.graphics.Bitmap? = runCatching {
+        val drawable = context.packageManager.getApplicationIcon(pkg)
+        val size = 192
+        val bitmap = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bitmap)
+        drawable.setBounds(0, 0, size, size)
+        drawable.draw(canvas)
+        bitmap
+    }.getOrNull()
 }
