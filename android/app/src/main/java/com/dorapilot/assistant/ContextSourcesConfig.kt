@@ -34,6 +34,10 @@ class ContextSourcesConfig(context: Context) {
         const val CALENDAR = "calendar"
         const val CONTACTS = "contacts"
         const val USAGE = "usage"
-        val KEYS = listOf(NOTIFICATIONS, MESSAGES, CALENDAR, CONTACTS, USAGE)
+
+        // Feature toggle: summarize long message notifications with the on-device
+        // model (private, no network). Backed by notification access.
+        const val SUMMARIES = "summaries"
+        val KEYS = listOf(NOTIFICATIONS, MESSAGES, CALENDAR, CONTACTS, USAGE, SUMMARIES)
     }
 }

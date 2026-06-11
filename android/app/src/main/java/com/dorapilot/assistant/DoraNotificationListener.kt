@@ -47,6 +47,19 @@ class DoraNotificationListener : NotificationListenerService() {
             applicationContext, sbn.packageName, appLabel, title, text, isMessage
         )
 
+        // On-device AI summaries for long message notifications (private, no key).
+        // Replaces the original with a one-line summary once it's ready.
+        if (NotificationSummarizer.isEnabled(applicationContext) &&
+            NotificationSummarizer.shouldSummarize(text, isMessage)
+        ) {
+            val originalKey = sbn.key
+            NotificationSummarizer.summarize(
+                applicationContext, sbn.packageName, appLabel, title, text, originalKey
+            ) {
+                runCatching { cancelNotification(originalKey) }
+            }
+        }
+
         // Capture into the encrypted context store, gated by the per-source toggles.
         val wantNotifications = config.isEnabled(ContextSourcesConfig.NOTIFICATIONS)
         val wantMessages = config.isEnabled(ContextSourcesConfig.MESSAGES)
