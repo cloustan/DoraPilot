@@ -31,13 +31,17 @@ object NotificationSummarizer {
     fun isEnabled(context: Context): Boolean =
         ContextSourcesConfig(context).isEnabled(ContextSourcesConfig.SUMMARIES)
 
-    /** Worth summarizing? Long message notifications only (short ones don't benefit). */
-    fun shouldSummarize(text: String, isMessage: Boolean): Boolean =
-        isMessage && text.length >= MIN_LEN
+    /**
+     * Worth summarizing? A conversation/burst (more than one message) OR a single
+     * long message. Short single messages don't benefit.
+     */
+    fun shouldSummarize(text: String, isMessage: Boolean, messageCount: Int): Boolean =
+        isMessage && (messageCount > 1 || text.length >= MIN_LEN)
 
     /**
-     * Summarize off-thread and post the result. [onReplace], if provided, is run
-     * after a successful summary so the listener can cancel the original.
+     * Summarize off-thread and post the result. [isConversation] picks a
+     * conversation-vs-single-message prompt. [onReplace], if provided, runs after
+     * a successful summary so the listener can cancel the original.
      */
     fun summarize(
         context: Context,
@@ -45,6 +49,7 @@ object NotificationSummarizer {
         app: String,
         title: String,
         text: String,
+        isConversation: Boolean,
         originalKey: String,
         onReplace: (() -> Unit)?
     ) {
@@ -57,16 +62,28 @@ object NotificationSummarizer {
             runCatching {
                 val engine = LocalOnnxRuntimeEngine(context, BackendConfig.load())
                 if (!engine.isConfigured()) return@runCatching
+                val system: String
+                val prompt: String
+                if (isConversation) {
+                    system = "You summarize a chat conversation in one short, clear sentence " +
+                        "(who said what / what's being asked). Output only the summary, no preamble."
+                    prompt = "Conversation in ${title.ifBlank { app }}:\n$text"
+                } else {
+                    system = "You summarize a chat message in one short, clear sentence. " +
+                        "Output only the summary, no preamble."
+                    prompt = "Message from ${title.ifBlank { app }}:\n\"$text\""
+                }
                 val result = engine.infer(
                     JSONObject()
-                        .put("system", "You summarize a chat message in one short, clear sentence. Output only the summary, no preamble.")
-                        .put("prompt", "Message from ${title.ifBlank { app }}:\n\"$text\"")
-                        .put("max_tokens", 80)
+                        .put("system", system)
+                        .put("prompt", prompt)
+                        .put("max_tokens", if (isConversation) 110 else 80)
                         .put("temperature", 0.2)
                 )
                 val summary = result.optString("output", "").trim().removeSurrounding("\"")
                 if (!result.optBoolean("ok", false) || summary.isBlank()) return@runCatching
-                postSummary(context, originalKey.hashCode(), pkg, "$app \u00b7 ${title.ifBlank { "Message" }}", summary)
+                val label = "$app \u00b7 ${title.ifBlank { "Messages" }}"
+                postSummary(context, originalKey.hashCode(), pkg, label, summary)
                 onReplace?.let { runCatching { it() } }
             }
         }

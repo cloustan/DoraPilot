@@ -3,6 +3,7 @@ package com.dorapilot.assistant
 import android.app.Notification
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
+import androidx.core.app.NotificationCompat
 
 /**
  * Captures recent notifications (and messaging-app messages) into the encrypted
@@ -47,16 +48,20 @@ class DoraNotificationListener : NotificationListenerService() {
             applicationContext, sbn.packageName, appLabel, title, text, isMessage
         )
 
-        // On-device AI summaries for long message notifications (private, no key).
-        // Replaces the original with a one-line summary once it's ready.
-        if (NotificationSummarizer.isEnabled(applicationContext) &&
-            NotificationSummarizer.shouldSummarize(text, isMessage)
-        ) {
-            val originalKey = sbn.key
-            NotificationSummarizer.summarize(
-                applicationContext, sbn.packageName, appLabel, title, text, originalKey
-            ) {
-                runCatching { cancelNotification(originalKey) }
+        // On-device AI summaries (private, no key). Summarize a long single
+        // message OR a conversation/burst of multiple messages. Replaces the
+        // original with a one-line summary once it's ready.
+        if (NotificationSummarizer.isEnabled(applicationContext)) {
+            val conversation = extractConversationMessages(notification)
+            val body = if (conversation.isNotEmpty()) conversation.joinToString("\n") else text
+            val count = if (conversation.isNotEmpty()) conversation.size else if (text.isNotEmpty()) 1 else 0
+            if (NotificationSummarizer.shouldSummarize(body, isMessage, count)) {
+                val originalKey = sbn.key
+                NotificationSummarizer.summarize(
+                    applicationContext, sbn.packageName, appLabel, title, body, count > 1, originalKey
+                ) {
+                    runCatching { cancelNotification(originalKey) }
+                }
             }
         }
 
@@ -78,6 +83,32 @@ class DoraNotificationListener : NotificationListenerService() {
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
         // No-op: we keep a short rolling history for context.
+    }
+
+    /**
+     * Pull individual messages out of a notification that bundles several:
+     * MessagingStyle (group/stacked chats) first, then InboxStyle text lines.
+     * Returns empty for a plain single-message notification.
+     */
+    private fun extractConversationMessages(notification: Notification): List<String> {
+        val out = mutableListOf<String>()
+        runCatching {
+            val style = NotificationCompat.MessagingStyle
+                .extractMessagingStyleFromNotification(notification)
+            style?.messages?.forEach { m ->
+                val body = m.text?.toString()?.trim().orEmpty()
+                if (body.isNotEmpty()) {
+                    val sender = m.person?.name?.toString().orEmpty()
+                    out.add(if (sender.isNotBlank()) "$sender: $body" else body)
+                }
+            }
+        }
+        if (out.isEmpty()) {
+            notification.extras?.getCharSequenceArray(Notification.EXTRA_TEXT_LINES)?.forEach { line ->
+                line?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { out.add(it) }
+            }
+        }
+        return out
     }
 
     companion object {
