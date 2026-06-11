@@ -15,7 +15,8 @@ class DeviceCommandRouter(
     private val intentRouter: IntentRoutingServer,
     private val appResolver: (String) -> String?,
     private val appActions: AppActionsServer? = null,
-    private val textIntelligence: TextIntelligenceServer? = null
+    private val textIntelligence: TextIntelligenceServer? = null,
+    private val screenIntelligence: ScreenIntelligenceServer? = null
 ) {
     fun tryHandle(rawPrompt: String): JSONObject? {
         val prompt = rawPrompt.trim()
@@ -28,6 +29,7 @@ class DeviceCommandRouter(
         val firstWord = text.substringBefore(' ')
         val isQuestion = firstWord in QUESTION_STARTS
         val hasActionCue = ACTION_CUES.any { text.contains(it) }
+        screenAction(prompt, text)?.let { return it }
         if (isQuestion && !hasActionCue) return null
 
         flashlight(text)?.let { return it }
@@ -38,6 +40,29 @@ class DeviceCommandRouter(
         openApp(prompt, text)?.let { return it }
         textIntelligence?.parseAndRun(prompt)?.let { return it }
         return null
+    }
+
+    private fun screenAction(originalPrompt: String, text: String): JSONObject? {
+        val screen = screenIntelligence ?: return null
+        val mentionsScreen = text.contains("screen") || text.contains("page") ||
+            text.contains("what i m looking at") || text.contains("what im looking at") ||
+            text.contains("what is this") || text.contains("what s this") ||
+            text.contains("what's this")
+        if (!mentionsScreen) return null
+
+        val result = when {
+            text.contains("translate") -> screen.translate(extractLanguage(originalPrompt).ifBlank { "English" })
+            text.contains("key point") || text.contains("bullet") -> screen.keyPoints()
+            text.contains("action item") || text.contains("todo") || text.contains("to do") -> screen.actionItems()
+            text.contains("summarize") || text.contains("summarise") || text.contains("tldr") ||
+                text.contains("tl dr") || text.contains("what is on") || text.contains("what s on") ||
+                text.contains("what's on") || text.contains("what am i looking at") ||
+                text.contains("what im looking at") || text.contains("what i m looking at") ||
+                text.contains("what is this") || text.contains("what s this") || text.contains("what's this") ->
+                screen.summarize()
+            else -> null
+        } ?: return null
+        return result.put("device_action", false)
     }
 
     private fun flashlight(text: String): JSONObject? {
@@ -226,6 +251,12 @@ class DeviceCommandRouter(
         return m?.groupValues?.getOrNull(1)?.trim().orEmpty()
     }
 
+    private fun extractLanguage(prompt: String): String {
+        Regex("\\b(?:to|into|in)\\s+([A-Za-z][A-Za-z\\s-]{1,30})\\s*$", RegexOption.IGNORE_CASE)
+            .find(prompt.trim())?.let { return it.groupValues[1].trim() }
+        return ""
+    }
+
     companion object {
         private val QUESTION_STARTS = setOf(
             "what", "whats", "how", "why", "who", "whom", "whose", "when", "where",
@@ -239,6 +270,7 @@ class DeviceCommandRouter(
             "skip", "pause", "resume", "stop", "toggle", "enable", "disable",
             "increase", "decrease", "lower", "raise", "louder", "quieter",
             "summarize", "summarise", "translate", "proofread", "fix grammar",
+            "screen", "page", "what's on", "what is on", "what am i looking at",
             "make this", "make it", "take a photo", "take a picture",
             "record a video", "wake me", "remind", "dial", "call ", "text ", "send "
         )

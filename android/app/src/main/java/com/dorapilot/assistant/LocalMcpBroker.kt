@@ -11,7 +11,8 @@ class LocalMcpBroker(
     private val deviceControl: DeviceControlServer,
     private val personalContext: PersonalContextEngine,
     private val appActions: AppActionsServer,
-    private val textIntelligence: TextIntelligenceServer
+    private val textIntelligence: TextIntelligenceServer,
+    private val screenIntelligence: ScreenIntelligenceServer
 ) {
     fun listTools(): JSONArray {
         return JSONArray().apply {
@@ -385,6 +386,36 @@ class LocalMcpBroker(
             )
             put(
                 JSONObject()
+                    .put("name", "screen_intelligence.summarize")
+                    .put("description", "Summarize the current Android AssistStructure screen text.")
+                    .put("input_schema", JSONObject().put("type", "object"))
+            )
+            put(
+                JSONObject()
+                    .put("name", "screen_intelligence.key_points")
+                    .put("description", "Extract key points from the current Android AssistStructure screen text.")
+                    .put("input_schema", JSONObject().put("type", "object"))
+            )
+            put(
+                JSONObject()
+                    .put("name", "screen_intelligence.action_items")
+                    .put("description", "Extract concrete action items from the current Android AssistStructure screen text.")
+                    .put("input_schema", JSONObject().put("type", "object"))
+            )
+            put(
+                JSONObject()
+                    .put("name", "screen_intelligence.translate")
+                    .put("description", "Translate the current Android AssistStructure screen text. Optional language defaults to English.")
+                    .put(
+                        "input_schema",
+                        JSONObject().put("type", "object").put(
+                            "properties",
+                            JSONObject().put("language", JSONObject().put("type", "string"))
+                        )
+                    )
+            )
+            put(
+                JSONObject()
                     .put("name", "system_capability_scanner.quick_stats")
                     .put("description", "Report navigation catalog freshness and indexed app count.")
                     .put("input_schema", JSONObject().put("type", "object"))
@@ -524,6 +555,10 @@ class LocalMcpBroker(
                     .getOrDefault(TextIntelligenceServer.Mode.SUMMARIZE)
                 textIntelligence.transform(mode, args.optString("text", ""), args.optString("language", ""))
             }
+            "screen_intelligence.summarize" -> screenIntelligence.summarize()
+            "screen_intelligence.key_points" -> screenIntelligence.keyPoints()
+            "screen_intelligence.action_items" -> screenIntelligence.actionItems()
+            "screen_intelligence.translate" -> screenIntelligence.translate(args.optString("language", "English"))
             "system_capability_scanner.quick_stats" -> scanner.quickStats()
             "transaction_monitor.verify_app_state" -> transactionMonitor.verifyAppState(args)
 

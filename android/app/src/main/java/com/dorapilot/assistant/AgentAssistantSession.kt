@@ -96,12 +96,17 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
         backendClient = mainBackendClient,
         configProvider = { backendConfig }
     )
+    private val screenIntelligenceServer = ScreenIntelligenceServer(
+        activeScreenProvider = { latestAssistJson },
+        textIntelligence = textIntelligenceServer
+    )
     private val deviceCommandRouter = DeviceCommandRouter(
         deviceControl = deviceControlServer,
         intentRouter = intentRoutingServer,
         appResolver = { name -> capabilityScanner.resolvePackageForLabel(name) },
         appActions = appActionsServer,
-        textIntelligence = textIntelligenceServer
+        textIntelligence = textIntelligenceServer,
+        screenIntelligence = screenIntelligenceServer
     )
     private val personalContextEngine = PersonalContextEngine(
         context = context,
@@ -116,7 +121,8 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
         deviceControl = deviceControlServer,
         personalContext = personalContextEngine,
         appActions = appActionsServer,
-        textIntelligence = textIntelligenceServer
+        textIntelligence = textIntelligenceServer,
+        screenIntelligence = screenIntelligenceServer
     )
 
     @Volatile

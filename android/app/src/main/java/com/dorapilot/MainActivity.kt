@@ -115,13 +115,20 @@ class MainActivity : AppCompatActivity() {
             configProvider = { backendConfig }
         )
     }
+    private val screenIntelligenceServer by lazy {
+        com.dorapilot.assistant.ScreenIntelligenceServer(
+            activeScreenProvider = { buildMainScreenSnapshot() },
+            textIntelligence = textIntelligenceServer
+        )
+    }
     private val deviceCommandRouter by lazy {
         com.dorapilot.assistant.DeviceCommandRouter(
             deviceControl = deviceControlServer,
             intentRouter = intentRoutingServer,
             appResolver = { name -> capabilityScanner.resolvePackageForLabel(name) },
             appActions = appActionsServer,
-            textIntelligence = textIntelligenceServer
+            textIntelligence = textIntelligenceServer,
+            screenIntelligence = screenIntelligenceServer
         )
     }
     private val personalContextEngine by lazy {
@@ -140,7 +147,8 @@ class MainActivity : AppCompatActivity() {
             deviceControl = deviceControlServer,
             personalContext = personalContextEngine,
             appActions = appActionsServer,
-            textIntelligence = textIntelligenceServer
+            textIntelligence = textIntelligenceServer,
+            screenIntelligence = screenIntelligenceServer
         )
     }
 
