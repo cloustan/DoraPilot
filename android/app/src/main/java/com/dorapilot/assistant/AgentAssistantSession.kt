@@ -100,18 +100,24 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
         activeScreenProvider = { latestAssistJson },
         textIntelligence = textIntelligenceServer
     )
+    private val personalContextEngine = PersonalContextEngine(
+        context = context,
+        scanner = capabilityScanner,
+        foregroundPackageProvider = { latestForegroundPackage }
+    )
+    private val timelineIntelligenceServer = TimelineIntelligenceServer(
+        personalContext = personalContextEngine,
+        backendClient = mainBackendClient,
+        configProvider = { backendConfig }
+    )
     private val deviceCommandRouter = DeviceCommandRouter(
         deviceControl = deviceControlServer,
         intentRouter = intentRoutingServer,
         appResolver = { name -> capabilityScanner.resolvePackageForLabel(name) },
         appActions = appActionsServer,
         textIntelligence = textIntelligenceServer,
-        screenIntelligence = screenIntelligenceServer
-    )
-    private val personalContextEngine = PersonalContextEngine(
-        context = context,
-        scanner = capabilityScanner,
-        foregroundPackageProvider = { latestForegroundPackage }
+        screenIntelligence = screenIntelligenceServer,
+        timelineIntelligence = timelineIntelligenceServer
     )
     private val localMcpBroker = LocalMcpBroker(
         scanner = capabilityScanner,
@@ -122,7 +128,8 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
         personalContext = personalContextEngine,
         appActions = appActionsServer,
         textIntelligence = textIntelligenceServer,
-        screenIntelligence = screenIntelligenceServer
+        screenIntelligence = screenIntelligenceServer,
+        timelineIntelligence = timelineIntelligenceServer
     )
 
     @Volatile

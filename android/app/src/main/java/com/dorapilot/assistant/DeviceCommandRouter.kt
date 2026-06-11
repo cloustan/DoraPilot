@@ -16,7 +16,8 @@ class DeviceCommandRouter(
     private val appResolver: (String) -> String?,
     private val appActions: AppActionsServer? = null,
     private val textIntelligence: TextIntelligenceServer? = null,
-    private val screenIntelligence: ScreenIntelligenceServer? = null
+    private val screenIntelligence: ScreenIntelligenceServer? = null,
+    private val timelineIntelligence: TimelineIntelligenceServer? = null
 ) {
     fun tryHandle(rawPrompt: String): JSONObject? {
         val prompt = rawPrompt.trim()
@@ -29,6 +30,7 @@ class DeviceCommandRouter(
         val firstWord = text.substringBefore(' ')
         val isQuestion = firstWord in QUESTION_STARTS
         val hasActionCue = ACTION_CUES.any { text.contains(it) }
+        timelineAction(prompt, text)?.let { return it }
         screenAction(prompt, text)?.let { return it }
         if (isQuestion && !hasActionCue) return null
 
@@ -40,6 +42,21 @@ class DeviceCommandRouter(
         openApp(prompt, text)?.let { return it }
         textIntelligence?.parseAndRun(prompt)?.let { return it }
         return null
+    }
+
+    private fun timelineAction(originalPrompt: String, text: String): JSONObject? {
+        val timeline = timelineIntelligence ?: return null
+        val wantsTimeline = text.contains("dora timeline") ||
+            text == "timeline" ||
+            text.contains("timeline my day") ||
+            text.contains("my timeline") ||
+            text.contains("what happened today") ||
+            text.contains("what s my day look like") ||
+            text.contains("what's my day look like") ||
+            text.contains("what does my day look like")
+        if (!wantsTimeline) return null
+        return timeline.doraTimeline(originalPrompt)
+            .put("device_action", false)
     }
 
     private fun screenAction(originalPrompt: String, text: String): JSONObject? {
@@ -271,6 +288,7 @@ class DeviceCommandRouter(
             "increase", "decrease", "lower", "raise", "louder", "quieter",
             "summarize", "summarise", "translate", "proofread", "fix grammar",
             "screen", "page", "what's on", "what is on", "what am i looking at",
+            "dora timeline", "timeline my day", "what happened today",
             "make this", "make it", "take a photo", "take a picture",
             "record a video", "wake me", "remind", "dial", "call ", "text ", "send "
         )

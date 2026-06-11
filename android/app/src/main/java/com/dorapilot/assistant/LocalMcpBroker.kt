@@ -12,7 +12,8 @@ class LocalMcpBroker(
     private val personalContext: PersonalContextEngine,
     private val appActions: AppActionsServer,
     private val textIntelligence: TextIntelligenceServer,
-    private val screenIntelligence: ScreenIntelligenceServer
+    private val screenIntelligence: ScreenIntelligenceServer,
+    private val timelineIntelligence: TimelineIntelligenceServer
 ) {
     fun listTools(): JSONArray {
         return JSONArray().apply {
@@ -416,6 +417,18 @@ class LocalMcpBroker(
             )
             put(
                 JSONObject()
+                    .put("name", "timeline_intelligence.dora_timeline")
+                    .put("description", "Create Dora Timeline: a chronological timeline from on-device personal context. Optional query narrows the timeline to a topic or time range.")
+                    .put(
+                        "input_schema",
+                        JSONObject().put("type", "object").put(
+                            "properties",
+                            JSONObject().put("query", JSONObject().put("type", "string"))
+                        )
+                    )
+            )
+            put(
+                JSONObject()
                     .put("name", "system_capability_scanner.quick_stats")
                     .put("description", "Report navigation catalog freshness and indexed app count.")
                     .put("input_schema", JSONObject().put("type", "object"))
@@ -559,6 +572,7 @@ class LocalMcpBroker(
             "screen_intelligence.key_points" -> screenIntelligence.keyPoints()
             "screen_intelligence.action_items" -> screenIntelligence.actionItems()
             "screen_intelligence.translate" -> screenIntelligence.translate(args.optString("language", "English"))
+            "timeline_intelligence.dora_timeline" -> timelineIntelligence.doraTimeline(args.optString("query", ""))
             "system_capability_scanner.quick_stats" -> scanner.quickStats()
             "transaction_monitor.verify_app_state" -> transactionMonitor.verifyAppState(args)
 

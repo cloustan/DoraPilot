@@ -121,6 +121,13 @@ class MainActivity : AppCompatActivity() {
             textIntelligence = textIntelligenceServer
         )
     }
+    private val timelineIntelligenceServer by lazy {
+        com.dorapilot.assistant.TimelineIntelligenceServer(
+            personalContext = personalContextEngine,
+            backendClient = mainBackendClient,
+            configProvider = { backendConfig }
+        )
+    }
     private val deviceCommandRouter by lazy {
         com.dorapilot.assistant.DeviceCommandRouter(
             deviceControl = deviceControlServer,
@@ -128,7 +135,8 @@ class MainActivity : AppCompatActivity() {
             appResolver = { name -> capabilityScanner.resolvePackageForLabel(name) },
             appActions = appActionsServer,
             textIntelligence = textIntelligenceServer,
-            screenIntelligence = screenIntelligenceServer
+            screenIntelligence = screenIntelligenceServer,
+            timelineIntelligence = timelineIntelligenceServer
         )
     }
     private val personalContextEngine by lazy {
@@ -148,7 +156,8 @@ class MainActivity : AppCompatActivity() {
             personalContext = personalContextEngine,
             appActions = appActionsServer,
             textIntelligence = textIntelligenceServer,
-            screenIntelligence = screenIntelligenceServer
+            screenIntelligence = screenIntelligenceServer,
+            timelineIntelligence = timelineIntelligenceServer
         )
     }
 
