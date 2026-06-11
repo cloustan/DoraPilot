@@ -82,7 +82,7 @@ object NotificationSummarizer {
                 )
                 val summary = result.optString("output", "").trim().removeSurrounding("\"")
                 if (!result.optBoolean("ok", false) || summary.isBlank()) return@runCatching
-                val label = "$app \u00b7 ${title.ifBlank { "Messages" }}"
+                val label = title.ifBlank { app.ifBlank { "Messages" } }
                 postSummary(context, originalKey.hashCode(), pkg, label, summary)
                 onReplace?.let { runCatching { it() } }
             }
