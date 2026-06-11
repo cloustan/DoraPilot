@@ -339,6 +339,11 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
                         } else {
                             val prompt = payload.optString("prompt", "").trim()
                             appendConversationHistory("user", prompt)
+                            // Multi-step / compound requests: chain the parts.
+                            if (looksMultiStep(prompt)) {
+                                runMultiStep(prompt)
+                                return@execute
+                            }
                             val deviceResult = deviceCommandRouter.tryHandle(prompt)
                             if (deviceResult != null) {
                                 if (deviceResult.optBoolean("ok", false)) {
@@ -637,16 +642,20 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
         }
 
         resolveDeterministicAnswer(goal)?.let { deterministic ->
-            emitTerminalStream("agent", "Final answer: $deterministic")
+            emitAgentFinal(deterministic)
             return
         }
 
-        // Instant native path for explicit device commands (flashlight, media, volume, open app).
-        deviceCommandRouter.tryHandle(goal)?.let { deviceResult ->
-            emitTerminalStream("agent", "Final answer: ${deviceResult.optString("output", "Done.")}")
-            return
+        // Single explicit command -> instant native path. Skip for compound/
+        // multi-step goals so the loop can chain the parts.
+        if (!looksMultiStep(goal)) {
+            deviceCommandRouter.tryHandle(goal)?.let { deviceResult ->
+                emitAgentFinal(deviceResult.optString("output", "Done."))
+                return
+            }
         }
 
+        setOverlayWorking()
         val toolsCatalog = filterToolsForGoal(localMcpBroker.listTools(), goal)
         val toolNames = buildToolNameSet(toolsCatalog)
         val toolsSummary = buildToolsSummary(toolsCatalog)
@@ -797,9 +806,69 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
             history += "Tool=$toolName args=$toolArgs result=$toolResult"
         }
 
-        if (finalAnswer.isBlank()) {
-            emitTerminalStream("agent", "Run loop ended without explicit final answer.")
+        emitAgentFinal(finalAnswer)
+    }
+
+    /** Emit the agent's final answer through the normal render path (overlay + app). */
+    private fun emitAgentFinal(answer: String) {
+        val text = answer.trim()
+            .ifBlank { "I couldn't fully complete that. Try rephrasing it or splitting it into steps." }
+        appendConversationHistory("assistant", text)
+        val result = JSONObject().put("ok", true).put("output", text)
+        emitTerminalStream("backend", "inference result=$result")
+    }
+
+    private fun setOverlayWorking() {
+        mainHandler.post {
+            overlayWebView?.evaluateJavascript(
+                "if(typeof setOverlayTitle==='function')setOverlayTitle('assistant','Working on it\\u2026');",
+                null
+            )
         }
+    }
+
+    private val actionVerbs = listOf(
+        "open ", "launch ", "play ", "turn on", "turn off", "set ", "send ", "text ",
+        "call ", "navigate", "directions", "find ", "mute", "unmute", "pause", "skip",
+        "resume", "stop ", "create ", "schedule ", "take a photo", "take a picture",
+        "record a video", "message ", "dial "
+    )
+
+    /** Heuristic: does the request contain 2+ distinct actions (needs chaining)? */
+    private fun looksMultiStep(prompt: String): Boolean {
+        val t = prompt.lowercase()
+        return actionVerbs.count { t.contains(it) } >= 2
+    }
+
+    /**
+     * Chain a compound request ("turn on the flashlight and set volume to 30").
+     * Each part is split on conjunctions and run through the reliable instant
+     * router; if every part is handled we report a combined result. If a part is
+     * not a known command, we fall back to the LLM agentic loop for the whole goal.
+     */
+    private fun runMultiStep(prompt: String) {
+        setOverlayWorking()
+        val parts = prompt
+            .split(Regex("(?i)\\s+(?:and then|after that|then|and|&)\\s+"))
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        if (parts.size < 2) {
+            runAgentTaskLoop(JSONObject().put("goal", prompt))
+            return
+        }
+        val outputs = mutableListOf<String>()
+        for (part in parts) {
+            val res = deviceCommandRouter.tryHandle(part)
+            if (res != null) {
+                outputs += res.optString("output", "Done.").trim()
+                runCatching { Thread.sleep(250) } // let each action settle
+            } else {
+                // Unknown step -> hand the whole goal to the LLM agent loop.
+                runAgentTaskLoop(JSONObject().put("goal", prompt))
+                return
+            }
+        }
+        emitAgentFinal(outputs.filter { it.isNotEmpty() }.joinToString(" "))
     }
 
     private fun requestCompletionWithRetry(
