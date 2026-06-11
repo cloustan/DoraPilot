@@ -14,6 +14,7 @@ import android.provider.Settings
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
+import android.util.Log
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.view.inputmethod.InputMethodManager
@@ -90,6 +91,7 @@ class MainActivity : AppCompatActivity() {
     private val capabilityScanner by lazy { SystemCapabilityScanner(this) }
     private val appCapabilityIndexer by lazy { com.dorapilot.assistant.AppCapabilityIndexer(this) }
     private val httpBridgeServer by lazy { com.dorapilot.assistant.HttpBridgeServer() }
+    private val automationServer by lazy { com.dorapilot.assistant.AutomationServer(this) }
     private val contextTriageServer by lazy {
         ContextTriageScreenServer(
             activeScreenProvider = { buildMainScreenSnapshot() },
@@ -168,7 +170,8 @@ class MainActivity : AppCompatActivity() {
             timelineIntelligence = timelineIntelligenceServer,
             webSearch = deviceWebSearchServer,
             appCapabilities = appCapabilityIndexer,
-            httpBridge = httpBridgeServer
+            httpBridge = httpBridgeServer,
+            automation = automationServer
         )
     }
 
@@ -202,6 +205,7 @@ class MainActivity : AppCompatActivity() {
         setupMainWebView(mainWebView)
         AliveForegroundService.ensureRunning(this)
         AssistantWorkScheduler.ensurePeriodicCapabilityScan(this)
+        AssistantWorkScheduler.ensureHeartbeat(this)
         // Keep the phone navigation index warm without blocking the UI.
         backgroundExecutor.execute {
             runCatching {
@@ -279,9 +283,71 @@ class MainActivity : AppCompatActivity() {
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
         webView.settings.mediaPlaybackRequiresUserGesture = false
-        webView.webViewClient = WebViewClient()
+        webView.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                when (intent.getStringExtra("dora_test_action")) {
+                    "open_sidebar" -> view?.postDelayed({
+                        view.evaluateJavascript(
+                            "if (window.__doraToggleSidebar) { window.__doraToggleSidebar(); console.log('DORA_TEST sidebar_opened'); }",
+                            null
+                        )
+                    }, 1200)
+                    "menu_bounds" -> view?.postDelayed({
+                        view.evaluateJavascript(
+                            """
+                            (function() {
+                                var btn = document.querySelector('.menu-btn');
+                                if (!btn) return;
+                                var r = btn.getBoundingClientRect();
+                                console.log('DORA_TEST menu_bounds=' + JSON.stringify({
+                                    left: Math.round(r.left),
+                                    top: Math.round(r.top),
+                                    width: Math.round(r.width),
+                                    height: Math.round(r.height),
+                                    innerWidth: window.innerWidth,
+                                    innerHeight: window.innerHeight,
+                                    dpr: window.devicePixelRatio
+                                }));
+                            })();
+                            """.trimIndent(),
+                            null
+                        )
+                    }, 1200)
+                    "force_sidebar" -> view?.postDelayed({
+                        view.evaluateJavascript(
+                            """
+                            document.body.classList.add('app-sidebar-open');
+                            var sidebar = document.querySelector('#appSidebar');
+                            var backdrop = document.querySelector('#sidebarBackdrop');
+                            if (sidebar) sidebar.classList.add('is-open');
+                            if (backdrop) backdrop.classList.add('is-open');
+                            """.trimIndent(),
+                            null
+                        )
+                    }, 1200)
+                    "test_send" -> view?.postDelayed({
+                        view.evaluateJavascript(
+                            """
+                            (function() {
+                                var input = document.querySelector('#composerInput');
+                                var send = document.querySelector('#composerSendBtn');
+                                if (!input || !send) return;
+                                input.value = 'hello';
+                                console.log('DORA_TEST sync_type=' + (typeof window.__doraSyncComposer));
+                                if (window.__doraSyncComposer) window.__doraSyncComposer();
+                                console.log('DORA_TEST send=' + send.className + ' display=' + send.style.display + ' hidden=' + send.hidden);
+                            })();
+                            """.trimIndent(),
+                            null
+                        )
+                    }, 1200)
+                }
+            }
+        }
         webView.webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(consoleMessage: ConsoleMessage): Boolean {
+                Log.i("DoraWebView", "[${consoleMessage.messageLevel().name}] ${consoleMessage.message()}")
                 emitTerminalStream(
                     "js",
                     "[${consoleMessage.messageLevel().name}] ${consoleMessage.message()}"

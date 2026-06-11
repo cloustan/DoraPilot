@@ -16,7 +16,8 @@ class LocalMcpBroker(
     private val timelineIntelligence: TimelineIntelligenceServer,
     private val webSearch: DeviceWebSearchServer,
     private val appCapabilities: AppCapabilityIndexer,
-    private val httpBridge: HttpBridgeServer
+    private val httpBridge: HttpBridgeServer,
+    private val automation: AutomationServer
 ) {
     fun listTools(): JSONArray {
         return JSONArray().apply {
@@ -122,6 +123,78 @@ class LocalMcpBroker(
                                     .put("args", JSONObject().put("type", "object"))
                             )
                             .put("required", JSONArray().put("actionType"))
+                    )
+            )
+            put(
+                JSONObject()
+                    .put("name", "automation.create")
+                    .put(
+                        "description",
+                        "Create a background automation that runs unattended. Args: goal (the " +
+                            "task in natural language), title, trigger_type ('interval' or " +
+                            "'daily'), interval_min (for interval), at (HH:mm for daily). " +
+                            "Examples: every-morning brief -> {goal:'Summarize my overnight " +
+                            "notifications and today plan', trigger_type:'daily', at:'08:00'}; " +
+                            "hourly price check -> {goal:'Check ...', trigger_type:'interval', interval_min:60}."
+                    )
+                    .put(
+                        "input_schema",
+                        JSONObject()
+                            .put("type", "object")
+                            .put(
+                                "properties",
+                                JSONObject()
+                                    .put("goal", JSONObject().put("type", "string"))
+                                    .put("title", JSONObject().put("type", "string"))
+                                    .put("trigger_type", JSONObject().put("type", "string"))
+                                    .put("interval_min", JSONObject().put("type", "integer"))
+                                    .put("at", JSONObject().put("type", "string"))
+                            )
+                            .put("required", JSONArray().put("goal"))
+                    )
+            )
+            put(
+                JSONObject()
+                    .put("name", "automation.list")
+                    .put("description", "List saved background automations and their last result.")
+                    .put("input_schema", JSONObject().put("type", "object"))
+            )
+            put(
+                JSONObject()
+                    .put("name", "automation.run_now")
+                    .put("description", "Run a saved automation immediately by id.")
+                    .put(
+                        "input_schema",
+                        JSONObject().put("type", "object")
+                            .put("properties", JSONObject().put("id", JSONObject().put("type", "integer")))
+                            .put("required", JSONArray().put("id"))
+                    )
+            )
+            put(
+                JSONObject()
+                    .put("name", "automation.set_enabled")
+                    .put("description", "Enable or pause an automation by id.")
+                    .put(
+                        "input_schema",
+                        JSONObject().put("type", "object")
+                            .put(
+                                "properties",
+                                JSONObject()
+                                    .put("id", JSONObject().put("type", "integer"))
+                                    .put("enabled", JSONObject().put("type", "boolean"))
+                            )
+                            .put("required", JSONArray().put("id"))
+                    )
+            )
+            put(
+                JSONObject()
+                    .put("name", "automation.delete")
+                    .put("description", "Delete an automation by id.")
+                    .put(
+                        "input_schema",
+                        JSONObject().put("type", "object")
+                            .put("properties", JSONObject().put("id", JSONObject().put("type", "integer")))
+                            .put("required", JSONArray().put("id"))
                     )
             )
             put(
@@ -644,6 +717,11 @@ class LocalMcpBroker(
                     packageName = args.optString("package", "").trim()
                 )
             }
+            "automation.create" -> automation.create(args)
+            "automation.list" -> automation.list()
+            "automation.run_now" -> automation.runNow(args.optLong("id"))
+            "automation.set_enabled" -> automation.setEnabled(args.optLong("id"), args.optBoolean("enabled", true))
+            "automation.delete" -> automation.delete(args.optLong("id"))
             "http.request" -> httpBridge.request(args)
             "app_capabilities.search" -> {
                 appCapabilities.search(args.optString("query", "").trim(), args.optInt("limit", 12))

@@ -11,6 +11,7 @@ class ServiceRestartReceiver : BroadcastReceiver() {
             action == Intent.ACTION_MY_PACKAGE_REPLACED
         ) {
             AssistantWorkScheduler.enqueueBootstrap(context)
+            AssistantWorkScheduler.ensureHeartbeat(context)
         }
     }
 }

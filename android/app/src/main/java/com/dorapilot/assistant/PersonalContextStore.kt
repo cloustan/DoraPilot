@@ -46,8 +46,91 @@ object PersonalContextStore {
                 "slots TEXT, extras TEXT, keywords TEXT, verified INTEGER, updated INTEGER, " +
                 "UNIQUE(package, name))"
         )
+        opened.execSQL(
+            "CREATE TABLE IF NOT EXISTS jobs(" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, goal TEXT, " +
+                "trigger_type TEXT, interval_min INTEGER, at_minutes INTEGER, event TEXT, " +
+                "enabled INTEGER, last_run INTEGER, last_result TEXT, created INTEGER)"
+        )
         database = opened
         return opened
+    }
+
+    // ---- automation jobs ---------------------------------------------------
+
+    fun addJob(
+        context: Context,
+        title: String,
+        goal: String,
+        triggerType: String,
+        intervalMin: Int,
+        atMinutes: Int,
+        event: String
+    ): Long = runCatching {
+        val values = ContentValues().apply {
+            put("title", title)
+            put("goal", goal)
+            put("trigger_type", triggerType)
+            put("interval_min", intervalMin)
+            put("at_minutes", atMinutes)
+            put("event", event)
+            put("enabled", 1)
+            put("last_run", 0L)
+            put("last_result", "")
+            put("created", System.currentTimeMillis())
+        }
+        db(context).insert("jobs", null, values)
+    }.getOrDefault(-1L)
+
+    fun listJobs(context: Context): List<JSONObject> = jobQuery(
+        context, "SELECT id,title,goal,trigger_type,interval_min,at_minutes,event,enabled,last_run,last_result FROM jobs ORDER BY id", emptyArray()
+    )
+
+    fun jobById(context: Context, id: Long): JSONObject? = jobQuery(
+        context, "SELECT id,title,goal,trigger_type,interval_min,at_minutes,event,enabled,last_run,last_result FROM jobs WHERE id=?", arrayOf(id.toString())
+    ).firstOrNull()
+
+    fun deleteJob(context: Context, id: Long) {
+        runCatching { db(context).delete("jobs", "id=?", arrayOf(id.toString())) }
+    }
+
+    fun setJobEnabled(context: Context, id: Long, enabled: Boolean) {
+        runCatching {
+            val v = ContentValues().apply { put("enabled", if (enabled) 1 else 0) }
+            db(context).update("jobs", v, "id=?", arrayOf(id.toString()))
+        }
+    }
+
+    fun markJobRun(context: Context, id: Long, result: String) {
+        runCatching {
+            val v = ContentValues().apply {
+                put("last_run", System.currentTimeMillis())
+                put("last_result", result.take(2000))
+            }
+            db(context).update("jobs", v, "id=?", arrayOf(id.toString()))
+        }
+    }
+
+    private fun jobQuery(context: Context, sql: String, args: Array<String>): List<JSONObject> {
+        val out = mutableListOf<JSONObject>()
+        runCatching {
+            db(context).rawQuery(sql, args).use { c ->
+                while (c.moveToNext()) {
+                    out += JSONObject()
+                        .put("id", c.getLong(0))
+                        .put("title", c.getString(1))
+                        .put("goal", c.getString(2))
+                        .put("trigger_type", c.getString(3))
+                        .put("interval_min", c.getInt(4))
+                        .put("at_minutes", c.getInt(5))
+                        .put("event", c.getString(6))
+                        .put("enabled", c.getInt(7) == 1)
+                        .put("last_run", c.getLong(8))
+                        .put("last_result", c.getString(9))
+                }
+            }
+        }
+        return out
     }
 
     // ---- app capability registry ------------------------------------------

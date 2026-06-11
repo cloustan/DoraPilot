@@ -295,7 +295,11 @@
         .top-row {
             display: flex;
             justify-content: space-between;
+            align-items: center;
             padding-top: 8px;
+            flex-shrink: 0;
+            position: relative;
+            z-index: 60;
         }
 
         .back-btn {
@@ -344,6 +348,18 @@
             border: 1px solid rgba(255, 255, 255, 0.12);
             box-shadow: 0 10px 28px rgba(0, 0, 0, 0.25);
             animation: riseIn 420ms ease-out 80ms both;
+            position: relative;
+            z-index: 61;
+            margin-right: auto;
+            cursor: pointer;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .menu-btn::after {
+            content: "";
+            position: absolute;
+            inset: -14px;
         }
 
         .menu-btn span {
@@ -706,15 +722,18 @@
             position: fixed;
             inset: 0;
             z-index: 44;
-            display: none;
             background: rgba(8, 18, 42, 0.28);
             backdrop-filter: blur(6px);
             -webkit-backdrop-filter: blur(6px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 300ms ease;
         }
 
-        body.app-mode.app-sidebar-open .sidebar-backdrop {
-            display: block;
-            animation: fadeIn 200ms ease-out both;
+        body.app-mode.app-sidebar-open .sidebar-backdrop,
+        #sidebarBackdrop.is-open {
+            opacity: 1;
+            pointer-events: auto;
         }
 
         .app-sidebar {
@@ -722,12 +741,7 @@
             inset: 0 auto 0 0;
             z-index: 45;
             width: min(304px, 84vw);
-            display: none;
             pointer-events: none;
-        }
-
-        body.app-mode .app-sidebar {
-            display: block;
         }
 
         .app-sidebar-panel {
@@ -742,12 +756,15 @@
             border-right: 1px solid rgba(255, 255, 255, 0.42);
             box-shadow: 18px 0 48px rgba(12, 28, 64, 0.18);
             transform: translateX(-104%);
-            transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
-            pointer-events: auto;
+            transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+            pointer-events: none;
+            will-change: transform;
         }
 
-        body.app-mode.app-sidebar-open .app-sidebar-panel {
+        body.app-mode.app-sidebar-open .app-sidebar-panel,
+        #appSidebar.is-open .app-sidebar-panel {
             transform: translateX(0);
+            pointer-events: auto;
         }
 
         .sidebar-head {
@@ -1227,12 +1244,36 @@
             overflow: visible;
         }
 
+        .composer-trailing {
+            position: relative;
+            flex: 0 0 34px;
+            width: 34px;
+            height: 34px;
+        }
+
+        .composer-trailing .composer-icon-btn {
+            position: absolute;
+            inset: 0;
+        }
+
         .composer-send {
             display: none;
+            opacity: 0;
+            pointer-events: none;
         }
 
         .composer-send.is-visible {
-            display: inline-flex;
+            display: inline-flex !important;
+            opacity: 1;
+            pointer-events: auto;
+            z-index: 2;
+        }
+
+        .composer-mic.is-hidden {
+            display: none !important;
+            opacity: 0;
+            pointer-events: none;
+            z-index: 1;
         }
 
         .mic-svg {
@@ -1553,7 +1594,7 @@
                         <path d="M15 5L8 12L15 19"></path>
                     </svg>
                 </button>
-                <button class="menu-btn" type="button" aria-label="Menu">
+                <button class="menu-btn" id="menuBtn" type="button" aria-label="Menu" onclick="window.__doraToggleSidebar && window.__doraToggleSidebar(event)">
                     <span></span>
                     <span></span>
                 </button>
@@ -1591,19 +1632,21 @@
                         <button class="composer-icon-btn composer-plus" id="composerAddBtn" type="button" aria-label="Add">+</button>
                         <button class="composer-mode-btn" id="composerModeBtn" type="button" aria-label="Toggle inference mode">Local</button>
                         <input id="composerInput" class="composer-input" type="text" placeholder="Ask Dora Pilot" />
-                        <button class="composer-icon-btn composer-mic" id="composerMicBtn" type="button" aria-label="Microphone">
-                            <svg class="mic-svg" viewBox="0 0 24 24" aria-hidden="true">
-                                <rect x="8" y="3" width="8" height="12" rx="4"></rect>
-                                <path d="M5 11a7 7 0 0 0 14 0"></path>
-                                <line x1="12" y1="18" x2="12" y2="21"></line>
-                                <line x1="9" y1="21" x2="15" y2="21"></line>
-                            </svg>
-                        </button>
-                        <button class="composer-icon-btn composer-send" id="composerSendBtn" type="button" aria-label="Send">
-                            <svg class="mic-svg" viewBox="0 0 24 24" aria-hidden="true">
-                                <path d="M3 11.5L21 3L14 21L11 13L3 11.5Z"></path>
-                            </svg>
-                        </button>
+                        <span class="composer-trailing">
+                            <button class="composer-icon-btn composer-mic" id="composerMicBtn" type="button" aria-label="Microphone">
+                                <svg class="mic-svg" viewBox="0 0 24 24" aria-hidden="true">
+                                    <rect x="8" y="3" width="8" height="12" rx="4"></rect>
+                                    <path d="M5 11a7 7 0 0 0 14 0"></path>
+                                    <line x1="12" y1="18" x2="12" y2="21"></line>
+                                    <line x1="9" y1="21" x2="15" y2="21"></line>
+                                </svg>
+                            </button>
+                            <button class="composer-icon-btn composer-send" id="composerSendBtn" type="button" aria-label="Send">
+                                <svg class="mic-svg" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M3 11.5L21 3L14 21L11 13L3 11.5Z"></path>
+                                </svg>
+                            </button>
+                        </span>
                     </div>
                     <div class="voice-wave" aria-hidden="true">
                         <span class="wave-bar"></span>
@@ -1645,9 +1688,10 @@
                 </div>
             </div>
         </div>
+    </div>
 
-        <div id="sidebarBackdrop" class="sidebar-backdrop" aria-hidden="true"></div>
-        <aside id="appSidebar" class="app-sidebar" aria-hidden="true">
+    <div id="sidebarBackdrop" class="sidebar-backdrop" aria-hidden="true"></div>
+    <aside id="appSidebar" class="app-sidebar" aria-hidden="true">
             <div class="app-sidebar-panel">
                 <div class="sidebar-head">
                     <img class="sidebar-logo" src="img/dora_pilot_logo.png" alt="" />
@@ -1684,7 +1728,6 @@
                 <div id="settingsList" class="settings-list"></div>
             </div>
         </div>
-    </div>
 
     <script src="web-haptics.js"></script>
     <script>
@@ -1769,6 +1812,8 @@
         };
     </script>
     <script>
+        window.onTerminalStream = window.onTerminalStream || function () {};
+
         const urlMode = new URLSearchParams(window.location.search).get("mode");
         if (urlMode === "app") {
             document.body.classList.add("app-mode");
@@ -2062,11 +2107,7 @@
                     inferMode === "local" ? "Switch to cloud inference" : "Switch to local inference"
                 );
             }
-            if (typeof updateSidebarInferLabel === "function") {
-                updateSidebarInferLabel();
-            }
         }
-        setInferMode("cloud");
 
         function buildInferPayload(prompt) {
             return {
@@ -2372,9 +2413,18 @@
             if (!composerInput || !composerMicBtn || !composerSendBtn) return;
             const hasText = composerInput.value.trim().length > 0;
             composerMicBtn.classList.toggle("is-hidden", hasText);
+            composerMicBtn.hidden = hasText;
             composerMicBtn.style.display = hasText ? "none" : "inline-flex";
+            composerMicBtn.style.opacity = hasText ? "0" : "1";
+            composerMicBtn.style.pointerEvents = hasText ? "none" : "auto";
             composerSendBtn.classList.toggle("is-visible", hasText);
+            composerSendBtn.hidden = !hasText;
+            composerSendBtn.style.display = hasText ? "inline-flex" : "none";
+            composerSendBtn.style.opacity = hasText ? "1" : "0";
+            composerSendBtn.style.pointerEvents = hasText ? "auto" : "none";
+            composerSendBtn.setAttribute("aria-hidden", hasText ? "false" : "true");
         }
+        window.__doraSyncComposer = updateComposerAction;
 
         function submitComposerPrompt(shouldRefocus = false) {
             if (!composerInput) return;
@@ -2660,9 +2710,11 @@
                     window.AndroidBridge.requestKeyboard();
                 }
             });
-            composerInput.addEventListener("input", () => {
-                updateComposerAction();
-            });
+            const syncComposerAction = () => updateComposerAction();
+            composerInput.addEventListener("input", syncComposerAction);
+            composerInput.addEventListener("keyup", syncComposerAction);
+            composerInput.addEventListener("change", syncComposerAction);
+            composerInput.addEventListener("compositionend", syncComposerAction);
             composerInput.addEventListener("keydown", (event) => {
                 if (event.key !== "Enter") return;
                 event.preventDefault();
@@ -2731,6 +2783,7 @@
         const CHAT_SESSIONS_KEY = "dora_chat_sessions_v1";
         let chatSessions = [];
         let activeSessionId = null;
+        let sidebarIgnoreCloseUntil = 0;
 
         function loadChatSessions() {
             if (!isAppMode) return;
@@ -2875,22 +2928,52 @@
             closeQuickActions();
             renderSidebarHistory();
             updateSidebarInferLabel();
+            sidebarIgnoreCloseUntil = Date.now() + 450;
             document.body.classList.add("app-sidebar-open");
+            appSidebar.classList.add("is-open");
             appSidebar.setAttribute("aria-hidden", "false");
-            if (sidebarBackdrop) sidebarBackdrop.setAttribute("aria-hidden", "false");
+            if (sidebarBackdrop) {
+                sidebarBackdrop.classList.add("is-open");
+                sidebarBackdrop.setAttribute("aria-hidden", "false");
+            }
         }
 
         function closeSidebar() {
             if (!appSidebar) return;
+            if (Date.now() < sidebarIgnoreCloseUntil) return;
             document.body.classList.remove("app-sidebar-open");
+            appSidebar.classList.remove("is-open");
             appSidebar.setAttribute("aria-hidden", "true");
-            if (sidebarBackdrop) sidebarBackdrop.setAttribute("aria-hidden", "true");
+            if (sidebarBackdrop) {
+                sidebarBackdrop.classList.remove("is-open");
+                sidebarBackdrop.setAttribute("aria-hidden", "true");
+            }
         }
 
+        function toggleSidebar(event) {
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            if (!isAppMode) return;
+            if (document.body.classList.contains("app-sidebar-open")) {
+                sidebarIgnoreCloseUntil = 0;
+                closeSidebar();
+            } else {
+                openSidebar();
+            }
+        }
+
+        window.__doraToggleSidebar = toggleSidebar;
+
+        setInferMode("cloud");
+
         if (isAppMode) {
-            loadChatSessions();
-            renderSidebarHistory();
-            updateSidebarInferLabel();
+            try {
+                loadChatSessions();
+                renderSidebarHistory();
+                updateSidebarInferLabel();
+            } catch (_error) {}
         }
 
         const CONTEXT_SOURCE_ICONS = {
@@ -2988,16 +3071,28 @@
         }
 
         if (menuBtn) {
-            menuBtn.addEventListener("pointerdown", (event) => {
+            let menuTouchHandled = false;
+            const handleMenuActivate = (event) => {
+                if (!isAppMode) {
+                    event.stopPropagation();
+                    runMcpSmokeTest();
+                    return;
+                }
+                event.preventDefault();
                 event.stopPropagation();
-                if (isAppMode) return;
-                // Keep menu for quick smoke test.
-                runMcpSmokeTest();
-            });
+                toggleSidebar(event);
+            };
+            menuBtn.addEventListener("touchend", (event) => {
+                menuTouchHandled = true;
+                handleMenuActivate(event);
+                setTimeout(() => { menuTouchHandled = false; }, 500);
+            }, { passive: false });
             menuBtn.addEventListener("click", (event) => {
-                event.stopPropagation();
-                if (isAppMode) { openSidebar(); return; }
-                runMcpSmokeTest();
+                if (menuTouchHandled) {
+                    event.preventDefault();
+                    return;
+                }
+                handleMenuActivate(event);
             });
             menuBtn.addEventListener("contextmenu", (event) => {
                 event.preventDefault();
