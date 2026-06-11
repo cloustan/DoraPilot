@@ -33,10 +33,12 @@ class DeviceCommandRouter(
         val firstWord = text.substringBefore(' ')
         val isQuestion = firstWord in QUESTION_STARTS
         val hasActionCue = ACTION_CUES.any { text.contains(it) }
-        // Plain informational questions ("how does bluetooth work") must NOT be
-        // hijacked by device matchers or on-device web search - let the cloud
-        // assistant answer them. Only intercept when there is a clear command cue.
-        if (isQuestion && !hasActionCue) return null
+        // Plain question with no device command: fetch a live web answer when it
+        // needs one (weather/news/etc.), otherwise let the cloud assistant answer.
+        if (isQuestion && !hasActionCue) {
+            if (wantsWebSearch(text)) runWebSearch(prompt)?.let { return it }
+            return null
+        }
 
         timelineAction(prompt, text)?.let { return it }
         screenAction(prompt, text)?.let { return it }
@@ -50,10 +52,16 @@ class DeviceCommandRouter(
         systemSearchAction(prompt, text)?.let { return it }
         openApp(prompt, text)?.let { return it }
         textIntelligence?.parseAndRun(prompt)?.let { return it }
-        if (isInformationQuery(text)) {
+        if (wantsWebSearch(text)) {
             runWebSearch(prompt)?.let { return it }
         }
         return null
+    }
+
+    private fun wantsWebSearch(text: String): Boolean {
+        return text.contains("weather") || text.contains("forecast") || text.contains("temperature") ||
+            text.contains("news") || text.startsWith("latest ") || text.contains(" latest ") ||
+            isInformationQuery(text)
     }
 
     /**
