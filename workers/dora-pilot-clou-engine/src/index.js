@@ -24,6 +24,9 @@ export default {
         if (path.endsWith("/v1/tts")) {
             return handleTts(request, env);
         }
+        if (path.endsWith("/v1/search")) {
+            return handleSearch(request, env);
+        }
 
         let body;
         try {
@@ -67,6 +70,115 @@ export default {
         });
     }
 };
+
+async function handleSearch(request, env) {
+    let body;
+    try {
+        body = await request.json();
+    } catch {
+        return json({ error: "Invalid JSON body" }, 400);
+    }
+
+    const query = `${body.query || ""}`.trim().slice(0, 300);
+    if (!query) {
+        return json({ error: "query required" }, 400);
+    }
+
+    const results = [];
+
+    // Live weather via wttr.in (free, no key) when the query is weather-related.
+    if (/\bweather\b|\bforecast\b|\btemperature\b/i.test(query)) {
+        try {
+            const loc = query.replace(/.*\b(weather|forecast|temperature)\b/i, "")
+                .replace(/^\s*(in|for|at|of|today|tomorrow|now)\b/gi, "")
+                .replace(/\b(today|tomorrow|right now|now)\b/gi, "")
+                .trim();
+            const wx = await fetch(`https://wttr.in/${encodeURIComponent(loc)}?format=j1`, {
+                headers: { accept: "application/json", "user-agent": "curl/8" }
+            });
+            if (wx.ok) {
+                const j = await wx.json();
+                const cur = j?.current_condition?.[0];
+                if (cur) {
+                    const place = j?.nearest_area?.[0]?.areaName?.[0]?.value || (loc || "your area");
+                    const desc = cur?.weatherDesc?.[0]?.value || "";
+                    results.push({
+                        title: `Weather in ${place}`,
+                        snippet: `${desc}, ${cur.temp_C}°C (feels like ${cur.FeelsLikeC}°C), humidity ${cur.humidity}%, wind ${cur.windspeedKmph} km/h.`,
+                        url: `https://wttr.in/${encodeURIComponent(loc)}`,
+                        source: "wttr.in"
+                    });
+                }
+            }
+        } catch {}
+    }
+
+    // DuckDuckGo Instant Answer API (fetched server-side; the worker has reliable
+    // internet even when the user's network blocks these domains directly).
+    try {
+        const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+        const ddg = await fetch(ddgUrl, { headers: { accept: "application/json" } });
+        if (ddg.ok) {
+            const d = await ddg.json();
+            if (d.AbstractText) {
+                results.push({ title: d.Heading || query, snippet: d.AbstractText, url: d.AbstractURL || "", source: "DuckDuckGo" });
+            }
+            if (d.Answer) {
+                results.push({ title: "Instant answer", snippet: `${d.Answer}`, url: "", source: "DuckDuckGo" });
+            }
+            for (const t of (d.RelatedTopics || []).slice(0, 6)) {
+                if (t && t.Text) {
+                    results.push({ title: (t.Text.split(" - ")[0] || "").slice(0, 80), snippet: t.Text, url: t.FirstURL || "", source: "DuckDuckGo" });
+                }
+            }
+        }
+    } catch {}
+
+    // Wikipedia summary when DuckDuckGo is sparse.
+    if (results.length < 2) {
+        try {
+            const wikiUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query.replace(/\s+/g, "_"))}`;
+            const wiki = await fetch(wikiUrl, { headers: { accept: "application/json", "user-agent": "DoraPilot/1.0 (web search)" } });
+            if (wiki.ok) {
+                const w = await wiki.json();
+                if (w.extract) {
+                    results.push({ title: w.title || query, snippet: w.extract, url: w?.content_urls?.desktop?.page || "", source: "Wikipedia" });
+                }
+            }
+        } catch {}
+    }
+
+    // Ground a concise answer on the fetched snippets (avoids hallucination).
+    let answer = "";
+    const weather = results.find((r) => r.source === "wttr.in");
+    if (weather) {
+        // The weather snippet is already a clean, direct answer - no synthesis needed.
+        answer = `${weather.title}: ${weather.snippet}`;
+    } else if (results.length > 0) {
+        const context = results.slice(0, 4)
+            .map((r) => `[${r.source}] ${r.title}: ${r.snippet}`)
+            .join("\n")
+            .slice(0, MAX_CONTENT_CHARS);
+        try {
+            const synth = await env.AI.run(DEFAULT_MODEL, {
+                messages: [
+                    { role: "system", content: "Answer the user's query in 1-3 sentences using ONLY the provided web snippets. Be direct. If the snippets do not contain the answer, say you couldn't find it." },
+                    { role: "user", content: `Query: ${query}\n\nWeb snippets:\n${context}` }
+                ],
+                temperature: 0.2,
+                max_tokens: 300
+            });
+            answer = `${synth?.response || ""}`.trim();
+        } catch {}
+    }
+
+    return json({
+        ok: true,
+        query,
+        answer,
+        results: results.slice(0, 6)
+    });
+}
 
 async function handleTts(request, env) {
     let body;

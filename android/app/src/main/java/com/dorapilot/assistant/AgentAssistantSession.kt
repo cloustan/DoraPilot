@@ -91,7 +91,7 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
     )
     private val deviceControlServer = DeviceControlServer(context)
     private val appActionsServer = AppActionsServer(context)
-    private val deviceWebSearchServer = DeviceWebSearchServer()
+    private val deviceWebSearchServer = DeviceWebSearchServer(configProvider = { backendConfig })
     private val textIntelligenceServer = TextIntelligenceServer(
         context = context,
         backendClient = mainBackendClient,

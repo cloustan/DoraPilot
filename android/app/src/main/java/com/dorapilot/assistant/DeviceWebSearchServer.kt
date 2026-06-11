@@ -3,62 +3,103 @@ package com.dorapilot.assistant
 import android.net.Uri
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 
 /**
- * Device-run web lookup: the phone makes the HTTPS request directly to free,
- * no-key public sources. Dora's backend is not involved in the search step.
+ * Web lookup that fetches an instant answer and returns it IN-APP (never opens
+ * the browser).
+ *
+ * Primary path: the Dora Worker fetches DuckDuckGo/Wikipedia server-side and
+ * grounds a concise answer - this works even when the device's network blocks
+ * those domains directly. Secondary path: a direct on-device fetch for networks
+ * where the worker is unreachable but the providers are not.
  */
-class DeviceWebSearchServer {
+class DeviceWebSearchServer(
+    private val configProvider: () -> BackendConfig
+) {
     fun search(query: String): JSONObject {
         val q = query.trim()
         if (q.isBlank()) {
             return JSONObject().put("ok", false).put("error", "query is required")
         }
 
-        val candidates = JSONArray()
-        val providerErrors = JSONArray()
-        runCatching { duckDuckGo(q) }
-            .onSuccess { merge(candidates, it) }
-            .onFailure { providerErrors.put(providerError("DuckDuckGo", it)) }
-        if (candidates.length() < 2) {
-            runCatching { wikipedia(q) }
-                .onSuccess { merge(candidates, it) }
-                .onFailure { providerErrors.put(providerError("Wikipedia", it)) }
+        // 1) Worker-proxied search (reliable internet, grounded answer).
+        runCatching { workerSearch(q) }.getOrNull()?.let { worker ->
+            val answer = worker.optString("answer").trim()
+            val results = worker.optJSONArray("results") ?: JSONArray()
+            if (answer.isNotBlank() || results.length() > 0) {
+                val output = if (answer.isNotBlank()) answer else formatAnswer(q, results)
+                return JSONObject()
+                    .put("ok", true)
+                    .put("query", q)
+                    .put("mode", "worker_web_search")
+                    .put("output", output)
+                    .put("results", results)
+            }
         }
 
+        // 2) Direct on-device fallback.
+        val candidates = JSONArray()
+        runCatching { duckDuckGo(q) }.onSuccess { merge(candidates, it) }
+        if (candidates.length() < 2) {
+            runCatching { wikipedia(q) }.onSuccess { merge(candidates, it) }
+        }
         val ranked = rank(q, candidates)
-        if (ranked.length() == 0) {
-            val browserUrl = "https://duckduckgo.com/?q=${Uri.encode(q)}"
-            val hadProviderFailure = providerErrors.length() > 0
-            val message = if (hadProviderFailure) {
-                "Instant web providers were unavailable from this device/network. Open this search: $browserUrl"
-            } else {
-                "I couldn't get an instant free result on-device. Open this search: $browserUrl"
-            }
+        if (ranked.length() > 0) {
             return JSONObject()
                 .put("ok", true)
                 .put("query", q)
-                .put("mode", "browser_fallback")
-                .put("output", message)
-                .put("url", browserUrl)
-                .put("results", JSONArray())
-                .put("provider_errors", providerErrors)
-                .put("needs_network", hadProviderFailure)
-                .put("retryable", hadProviderFailure)
+                .put("mode", "device_web_search")
+                .put("output", formatAnswer(q, ranked))
+                .put("results", ranked)
         }
 
+        // Nothing fetched: return empty so the caller can fall back to the
+        // assistant's own answer (in-app), NOT the browser.
         return JSONObject()
             .put("ok", true)
             .put("query", q)
-            .put("mode", "device_web_search")
-            .put("output", formatAnswer(q, ranked))
-            .put("results", ranked)
-            .put("provider_errors", providerErrors)
-            .put("retryable", false)
+            .put("mode", "empty")
+            .put("output", "")
+            .put("results", JSONArray())
+    }
+
+    private fun workerSearch(query: String): JSONObject {
+        val config = configProvider()
+        val endpoint = config.endpoint.trim()
+        if (endpoint.isBlank() || config.apiKey.isBlank()) error("backend not configured")
+        val base = endpoint.substringBeforeLast("/v1/", "")
+        val searchUrl = if (base.isNotBlank()) "$base/v1/search"
+        else Uri.parse(endpoint).buildUpon().path("/v1/search").build().toString()
+
+        val payload = JSONObject().put("query", query)
+        val connection = (URL(searchUrl).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 8000
+            readTimeout = 20000
+            doOutput = true
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("Authorization", "Bearer ${config.apiKey}")
+            val headers = config.headers
+            headers.keys().forEach { key ->
+                val value = headers.optString(key, "")
+                if (value.isNotBlank()) setRequestProperty(key, value)
+            }
+        }
+        return try {
+            connection.outputStream.bufferedWriter().use { it.write(payload.toString()) }
+            connection.connect()
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val bodyText = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (status !in 200..299) error("HTTP $status: ${bodyText.take(160)}")
+            JSONObject(bodyText)
+        } finally {
+            connection.disconnect()
+        }
     }
 
     private fun duckDuckGo(query: String): JSONArray {
@@ -159,14 +200,13 @@ class DeviceWebSearchServer {
     }
 
     private fun formatAnswer(query: String, results: JSONArray): String {
-        val lines = mutableListOf("Dora web search: $query")
+        val lines = mutableListOf("Web results for: $query")
         for (i in 0 until minOf(results.length(), 3)) {
             val item = results.optJSONObject(i) ?: continue
             val source = item.optString("source", "source")
             val title = item.optString("title").ifBlank { source }
             val snippet = item.optString("snippet").take(360)
-            val url = item.optString("url")
-            lines += "- $title ($source): $snippet${if (url.isNotBlank()) "\n  $url" else ""}"
+            lines += "- $title ($source): $snippet"
         }
         return lines.joinToString("\n")
     }
@@ -190,15 +230,6 @@ class DeviceWebSearchServer {
         } finally {
             connection.disconnect()
         }
-    }
-
-    private fun providerError(provider: String, error: Throwable): JSONObject {
-        val root = error.cause ?: error
-        return JSONObject()
-            .put("provider", provider)
-            .put("type", root.javaClass.simpleName)
-            .put("message", root.message?.take(180) ?: root.toString().take(180))
-            .put("network_error", root is IOException)
     }
 
     private fun enc(value: String): String = URLEncoder.encode(value, "UTF-8")

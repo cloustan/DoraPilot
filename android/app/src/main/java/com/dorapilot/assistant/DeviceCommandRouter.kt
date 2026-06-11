@@ -1,6 +1,5 @@
 package com.dorapilot.assistant
 
-import android.net.Uri
 import org.json.JSONObject
 
 /**
@@ -58,28 +57,22 @@ class DeviceCommandRouter(
     }
 
     /**
-     * Explicit web-search commands ("search the web for X", "look up X"). Tries
-     * the on-device instant providers; when they are blocked/unreachable on the
-     * current network (no results), it OPENS the browser with the query instead
-     * of dead-ending with a "providers unavailable" message.
+     * Explicit web-search commands ("search the web for X", "look up X"). Fetches
+     * an instant answer (via the worker-proxied search) and returns it IN-APP.
+     * If nothing is fetched, returns null so the caller falls back to the cloud
+     * assistant's own answer - never opens the browser.
      */
     private fun runWebSearch(prompt: String): JSONObject? {
         val ws = webSearch ?: return null
         val cleaned = stripSearchPrefix(prompt)
         if (cleaned.isBlank()) return null
-        val res = runCatching { ws.search(cleaned) }.getOrNull()
-        val resultCount = res?.optJSONArray("results")?.length() ?: 0
-        if (res != null && resultCount > 0) {
+        val res = runCatching { ws.search(cleaned) }.getOrNull() ?: return null
+        val hasResults = (res.optJSONArray("results")?.length() ?: 0) > 0
+        val output = res.optString("output").trim()
+        if (output.isNotBlank() || hasResults) {
             return res.put("device_action", false)
         }
-        val url = res?.optString("url").orEmpty()
-            .ifBlank { "https://duckduckgo.com/?q=" + Uri.encode(cleaned) }
-        val launch = intentRouter.fireAppDeepLink(url, "")
-        return JSONObject()
-            .put("ok", launch.optBoolean("ok", true))
-            .put("device_action", true)
-            .put("output", "Searching the web for \u201C$cleaned\u201D in your browser.")
-            .put("detail", launch)
+        return null
     }
 
     private fun stripSearchPrefix(prompt: String): String {

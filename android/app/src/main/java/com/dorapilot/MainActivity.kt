@@ -108,7 +108,9 @@ class MainActivity : AppCompatActivity() {
     }
     private val deviceControlServer by lazy { com.dorapilot.assistant.DeviceControlServer(this) }
     private val appActionsServer by lazy { com.dorapilot.assistant.AppActionsServer(this) }
-    private val deviceWebSearchServer by lazy { com.dorapilot.assistant.DeviceWebSearchServer() }
+    private val deviceWebSearchServer by lazy {
+        com.dorapilot.assistant.DeviceWebSearchServer(configProvider = { backendConfig })
+    }
     private val textIntelligenceServer by lazy {
         com.dorapilot.assistant.TextIntelligenceServer(
             context = this,
