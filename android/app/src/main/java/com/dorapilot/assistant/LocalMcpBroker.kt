@@ -15,7 +15,8 @@ class LocalMcpBroker(
     private val screenIntelligence: ScreenIntelligenceServer,
     private val timelineIntelligence: TimelineIntelligenceServer,
     private val webSearch: DeviceWebSearchServer,
-    private val appCapabilities: AppCapabilityIndexer
+    private val appCapabilities: AppCapabilityIndexer,
+    private val httpBridge: HttpBridgeServer
 ) {
     fun listTools(): JSONArray {
         return JSONArray().apply {
@@ -121,6 +122,33 @@ class LocalMcpBroker(
                                     .put("args", JSONObject().put("type", "object"))
                             )
                             .put("required", JSONArray().put("actionType"))
+                    )
+            )
+            put(
+                JSONObject()
+                    .put("name", "http.request")
+                    .put(
+                        "description",
+                        "Make an HTTP/HTTPS request to any web API or webhook and get the " +
+                            "response back. Use this to do things headlessly via APIs instead of " +
+                            "app UIs (fetch data, call a service, post to a webhook). Args: " +
+                            "method (GET/POST/PUT/PATCH/DELETE), url, headers (object), query " +
+                            "(object), body (string or JSON object). Returns status, headers, body."
+                    )
+                    .put(
+                        "input_schema",
+                        JSONObject()
+                            .put("type", "object")
+                            .put(
+                                "properties",
+                                JSONObject()
+                                    .put("method", JSONObject().put("type", "string"))
+                                    .put("url", JSONObject().put("type", "string"))
+                                    .put("headers", JSONObject().put("type", "object"))
+                                    .put("query", JSONObject().put("type", "object"))
+                                    .put("body", JSONObject().put("type", "object"))
+                            )
+                            .put("required", JSONArray().put("url"))
                     )
             )
             put(
@@ -616,6 +644,7 @@ class LocalMcpBroker(
                     packageName = args.optString("package", "").trim()
                 )
             }
+            "http.request" -> httpBridge.request(args)
             "app_capabilities.search" -> {
                 appCapabilities.search(args.optString("query", "").trim(), args.optInt("limit", 12))
             }

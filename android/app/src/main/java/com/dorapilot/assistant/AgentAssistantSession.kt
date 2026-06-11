@@ -61,6 +61,7 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
     )
     private val capabilityScanner = SystemCapabilityScanner(context)
     private val appCapabilityIndexer = AppCapabilityIndexer(context)
+    private val httpBridgeServer = HttpBridgeServer()
     private val vibrator: Vibrator? by lazy {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)?.defaultVibrator
@@ -136,7 +137,8 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
         screenIntelligence = screenIntelligenceServer,
         timelineIntelligence = timelineIntelligenceServer,
         webSearch = deviceWebSearchServer,
-        appCapabilities = appCapabilityIndexer
+        appCapabilities = appCapabilityIndexer,
+        httpBridge = httpBridgeServer
     )
 
     @Volatile
@@ -798,6 +800,8 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
             "device_control.", "personal_context.", "text_intelligence."
         )
         val allowExact = setOf(
+            "http.request",
+            "app_capabilities.search",
             "intent_routing_server.start_intent",
             "intent_routing_server.open_app",
             "intent_routing_server.launch_system_action",

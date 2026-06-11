@@ -89,6 +89,7 @@ class MainActivity : AppCompatActivity() {
     private val conversationHistory = ArrayDeque<JSONObject>()
     private val capabilityScanner by lazy { SystemCapabilityScanner(this) }
     private val appCapabilityIndexer by lazy { com.dorapilot.assistant.AppCapabilityIndexer(this) }
+    private val httpBridgeServer by lazy { com.dorapilot.assistant.HttpBridgeServer() }
     private val contextTriageServer by lazy {
         ContextTriageScreenServer(
             activeScreenProvider = { buildMainScreenSnapshot() },
@@ -166,7 +167,8 @@ class MainActivity : AppCompatActivity() {
             screenIntelligence = screenIntelligenceServer,
             timelineIntelligence = timelineIntelligenceServer,
             webSearch = deviceWebSearchServer,
-            appCapabilities = appCapabilityIndexer
+            appCapabilities = appCapabilityIndexer,
+            httpBridge = httpBridgeServer
         )
     }
 
@@ -588,6 +590,16 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun requestContextPermission(key: String) {
             runOnUiThread { this@MainActivity.requestContextPermission(key) }
+        }
+
+        @JavascriptInterface
+        fun clearConversationHistory() {
+            conversationHistory.clear()
+        }
+
+        @JavascriptInterface
+        fun appendConversationHistory(role: String, content: String) {
+            this@MainActivity.appendConversationHistory(role, content)
         }
     }
 

@@ -702,6 +702,253 @@
         .switch input:checked + .slider { background: #2f6bff; }
         .switch input:checked + .slider::before { transform: translateX(20px); }
 
+        .sidebar-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 44;
+            display: none;
+            background: rgba(8, 18, 42, 0.28);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+        }
+
+        body.app-mode.app-sidebar-open .sidebar-backdrop {
+            display: block;
+            animation: fadeIn 200ms ease-out both;
+        }
+
+        .app-sidebar {
+            position: fixed;
+            inset: 0 auto 0 0;
+            z-index: 45;
+            width: min(304px, 84vw);
+            display: none;
+            pointer-events: none;
+        }
+
+        body.app-mode .app-sidebar {
+            display: block;
+        }
+
+        .app-sidebar-panel {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            padding: calc(18px + env(safe-area-inset-top)) 16px calc(18px + env(safe-area-inset-bottom));
+            box-sizing: border-box;
+            background: rgba(244, 248, 255, 0.58);
+            backdrop-filter: blur(32px) saturate(1.35);
+            -webkit-backdrop-filter: blur(32px) saturate(1.35);
+            border-right: 1px solid rgba(255, 255, 255, 0.42);
+            box-shadow: 18px 0 48px rgba(12, 28, 64, 0.18);
+            transform: translateX(-104%);
+            transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+            pointer-events: auto;
+        }
+
+        body.app-mode.app-sidebar-open .app-sidebar-panel {
+            transform: translateX(0);
+        }
+
+        .sidebar-head {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+
+        .sidebar-logo {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+        }
+
+        .sidebar-head h2 {
+            flex: 1;
+            margin: 0;
+            font-size: 22px;
+            font-weight: 700;
+            color: #16233f;
+            letter-spacing: -0.02em;
+        }
+
+        .sidebar-close {
+            width: 34px;
+            height: 34px;
+            border: 0;
+            border-radius: 50%;
+            background: rgba(20, 40, 86, 0.08);
+            color: #16233f;
+            font-size: 17px;
+            cursor: pointer;
+        }
+
+        .sidebar-new-chat {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            margin-bottom: 18px;
+            padding: 12px 14px;
+            border: 1px solid rgba(47, 107, 255, 0.28);
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.72);
+            color: #2f6bff;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 8px 22px rgba(47, 107, 255, 0.12);
+        }
+
+        .sidebar-section {
+            flex: 1 1 auto;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-section h3 {
+            margin: 0 0 10px;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: rgba(22, 35, 63, 0.48);
+        }
+
+        .sidebar-history {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding-right: 2px;
+        }
+
+        .sidebar-history::-webkit-scrollbar {
+            width: 0;
+            height: 0;
+        }
+
+        .sidebar-history-item {
+            display: block;
+            width: 100%;
+            border: 0;
+            text-align: left;
+            padding: 11px 12px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.5);
+            border: 1px solid rgba(20, 40, 86, 0.06);
+            color: #16233f;
+            font-size: 14px;
+            line-height: 1.35;
+            cursor: pointer;
+            transition: background 160ms ease, border-color 160ms ease;
+        }
+
+        .sidebar-history-item:hover,
+        .sidebar-history-item.is-active {
+            background: rgba(255, 255, 255, 0.86);
+            border-color: rgba(47, 107, 255, 0.22);
+        }
+
+        .sidebar-history-item .shi-time {
+            display: block;
+            margin-top: 3px;
+            font-size: 11px;
+            color: rgba(22, 35, 63, 0.46);
+        }
+
+        .sidebar-history-empty {
+            margin: 8px 2px 0;
+            font-size: 13px;
+            line-height: 1.45;
+            color: rgba(22, 35, 63, 0.52);
+        }
+
+        .sidebar-footer {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 14px;
+            padding-top: 14px;
+            border-top: 1px solid rgba(20, 40, 86, 0.08);
+        }
+
+        .sidebar-nav-btn {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+            padding: 12px 14px;
+            border: 0;
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.56);
+            color: #16233f;
+            font-size: 14px;
+            font-weight: 600;
+            text-align: left;
+            cursor: pointer;
+        }
+
+        .sidebar-nav-btn svg {
+            width: 18px;
+            height: 18px;
+            flex: 0 0 auto;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        .sidebar-nav-btn span {
+            display: block;
+            font-size: 11.5px;
+            font-weight: 500;
+            color: rgba(22, 35, 63, 0.52);
+            margin-top: 2px;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            .app-sidebar-panel {
+                background: rgba(16, 23, 38, 0.62);
+                border-right-color: rgba(255, 255, 255, 0.1);
+                box-shadow: 18px 0 48px rgba(0, 0, 0, 0.34);
+            }
+
+            .sidebar-head h2,
+            .sidebar-history-item,
+            .sidebar-nav-btn {
+                color: rgba(244, 248, 255, 0.95);
+            }
+
+            .sidebar-close,
+            .sidebar-nav-btn,
+            .sidebar-history-item {
+                background: rgba(255, 255, 255, 0.08);
+                border-color: rgba(255, 255, 255, 0.08);
+            }
+
+            .sidebar-new-chat {
+                background: rgba(47, 107, 255, 0.18);
+                border-color: rgba(120, 168, 255, 0.28);
+                color: rgba(214, 230, 255, 0.98);
+            }
+
+            .sidebar-section h3,
+            .sidebar-history-item .shi-time,
+            .sidebar-history-empty,
+            .sidebar-nav-btn span {
+                color: rgba(214, 230, 255, 0.56);
+            }
+        }
+
         body.app-mode .avatar {
             margin: 0 auto 24px;
         }
@@ -1399,6 +1646,34 @@
             </div>
         </div>
 
+        <div id="sidebarBackdrop" class="sidebar-backdrop" aria-hidden="true"></div>
+        <aside id="appSidebar" class="app-sidebar" aria-hidden="true">
+            <div class="app-sidebar-panel">
+                <div class="sidebar-head">
+                    <img class="sidebar-logo" src="img/dora_pilot_logo.png" alt="" />
+                    <h2>Dora</h2>
+                    <button id="sidebarClose" class="sidebar-close" type="button" aria-label="Close menu">&#10005;</button>
+                </div>
+                <button id="sidebarNewChat" class="sidebar-new-chat" type="button">+ New chat</button>
+                <div class="sidebar-section">
+                    <h3>Conversations</h3>
+                    <div id="sidebarHistory" class="sidebar-history">
+                        <p class="sidebar-history-empty">Your chats will show up here.</p>
+                    </div>
+                </div>
+                <div class="sidebar-footer">
+                    <button id="sidebarSettingsBtn" class="sidebar-nav-btn" type="button">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                        <div>Personal context<span>Notifications, calendar, contacts</span></div>
+                    </button>
+                    <button id="sidebarInferBtn" class="sidebar-nav-btn" type="button">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3"/><path d="M12 18v3"/><path d="M3 12h3"/><path d="M18 12h3"/><path d="M5.6 5.6 7.7 7.7"/><path d="M16.3 16.3l2.1 2.1"/><path d="M5.6 18.4 7.7 16.3"/><path d="M16.3 7.7l2.1-2.1"/><circle cx="12" cy="12" r="4"/></svg>
+                        <div id="sidebarInferLabel">Inference mode<span>Cloud or on-device</span></div>
+                    </button>
+                </div>
+            </div>
+        </aside>
+
         <div id="settingsPanel" class="settings-panel" aria-hidden="true">
             <div class="settings-sheet">
                 <div class="settings-head">
@@ -1787,6 +2062,9 @@
                     inferMode === "local" ? "Switch to cloud inference" : "Switch to local inference"
                 );
             }
+            if (typeof updateSidebarInferLabel === "function") {
+                updateSidebarInferLabel();
+            }
         }
         setInferMode("cloud");
 
@@ -1908,7 +2186,8 @@
         function showActionPending(label) {
             if (!isAppMode || !chatList) return;
             setAppScreen("chat");
-            if (chatEmpty && chatEmpty.parentElement) chatEmpty.remove();
+            const emptyState = document.getElementById("chatEmpty");
+            if (emptyState && emptyState.parentElement) emptyState.remove();
             const card = document.createElement("div");
             card.className = "action-card is-loading";
             card.innerHTML =
@@ -1976,8 +2255,9 @@
             }
             if (!chatList) return;
             setAppScreen("chat");
-            if (chatEmpty && chatEmpty.parentElement) {
-                chatEmpty.remove();
+            const emptyState = document.getElementById("chatEmpty");
+            if (emptyState && emptyState.parentElement) {
+                emptyState.remove();
             }
             const item = document.createElement("div");
             item.className = `chat-msg ${role === "user" ? "chat-msg-user" : "chat-msg-assistant"}`;
@@ -1988,6 +2268,7 @@
             }
             chatList.appendChild(item);
             chatList.scrollTop = chatList.scrollHeight;
+            recordSessionMessage(role, text);
             if (role === "assistant") {
                 requestNaturalTts(text);
             }
@@ -2439,6 +2720,178 @@
         const settingsPanel = document.querySelector("#settingsPanel");
         const settingsList = document.querySelector("#settingsList");
         const settingsClose = document.querySelector("#settingsClose");
+        const appSidebar = document.querySelector("#appSidebar");
+        const sidebarBackdrop = document.querySelector("#sidebarBackdrop");
+        const sidebarClose = document.querySelector("#sidebarClose");
+        const sidebarNewChat = document.querySelector("#sidebarNewChat");
+        const sidebarHistory = document.querySelector("#sidebarHistory");
+        const sidebarSettingsBtn = document.querySelector("#sidebarSettingsBtn");
+        const sidebarInferBtn = document.querySelector("#sidebarInferBtn");
+        const sidebarInferLabel = document.querySelector("#sidebarInferLabel");
+        const CHAT_SESSIONS_KEY = "dora_chat_sessions_v1";
+        let chatSessions = [];
+        let activeSessionId = null;
+
+        function loadChatSessions() {
+            if (!isAppMode) return;
+            try {
+                chatSessions = JSON.parse(localStorage.getItem(CHAT_SESSIONS_KEY) || "[]");
+            } catch (_error) {
+                chatSessions = [];
+            }
+        }
+
+        function saveChatSessions() {
+            if (!isAppMode) return;
+            localStorage.setItem(CHAT_SESSIONS_KEY, JSON.stringify(chatSessions.slice(0, 40)));
+        }
+
+        function formatSessionTime(timestamp) {
+            const date = new Date(timestamp || Date.now());
+            const now = new Date();
+            const sameDay = date.toDateString() === now.toDateString();
+            if (sameDay) {
+                return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+            }
+            return date.toLocaleDateString([], { month: "short", day: "numeric" });
+        }
+
+        function ensureActiveSession() {
+            if (!isAppMode) return null;
+            if (!activeSessionId) {
+                activeSessionId = `s_${Date.now()}`;
+                chatSessions.unshift({
+                    id: activeSessionId,
+                    title: "New chat",
+                    messages: [],
+                    updatedAt: Date.now()
+                });
+                saveChatSessions();
+            }
+            return chatSessions.find((session) => session.id === activeSessionId) || null;
+        }
+
+        function recordSessionMessage(role, text) {
+            if (!isAppMode || !text) return;
+            const session = ensureActiveSession();
+            if (!session) return;
+            session.messages.push({ role, text: `${text}`.slice(0, 4000) });
+            if (role === "user" && session.title === "New chat") {
+                session.title = `${text}`.slice(0, 48) + (`${text}`.length > 48 ? "\u2026" : "");
+            }
+            session.updatedAt = Date.now();
+            chatSessions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+            saveChatSessions();
+            renderSidebarHistory();
+        }
+
+        function renderSidebarHistory() {
+            if (!sidebarHistory) return;
+            const sessions = chatSessions.filter((session) => (session.messages || []).length > 0);
+            if (!sessions.length) {
+                sidebarHistory.innerHTML = '<p class="sidebar-history-empty">Your chats will show up here.</p>';
+                return;
+            }
+            sidebarHistory.innerHTML = "";
+            sessions.forEach((session) => {
+                const button = document.createElement("button");
+                button.type = "button";
+                button.className = "sidebar-history-item" + (session.id === activeSessionId ? " is-active" : "");
+                button.innerHTML =
+                    `${escapeHtml(session.title || "Chat")}` +
+                    `<span class="shi-time">${escapeHtml(formatSessionTime(session.updatedAt))}</span>`;
+                button.addEventListener("click", () => loadChatSession(session.id));
+                sidebarHistory.appendChild(button);
+            });
+        }
+
+        function renderChatSessionMessages(messages) {
+            if (!chatList) return;
+            chatList.innerHTML = "";
+            if (!messages || !messages.length) {
+                chatList.innerHTML = '<p id="chatEmpty" class="chat-empty">Start chatting with Dora.</p>';
+                return;
+            }
+            messages.forEach((message) => {
+                const item = document.createElement("div");
+                item.className = `chat-msg ${message.role === "user" ? "chat-msg-user" : "chat-msg-assistant"}`;
+                if (message.role === "assistant") {
+                    item.innerHTML = renderMarkdown(message.text);
+                } else {
+                    item.textContent = message.text;
+                }
+                chatList.appendChild(item);
+            });
+            chatList.scrollTop = chatList.scrollHeight;
+        }
+
+        function clearNativeConversationHistory() {
+            if (window.AndroidBridge && typeof window.AndroidBridge.clearConversationHistory === "function") {
+                try { window.AndroidBridge.clearConversationHistory(); } catch (_error) {}
+            }
+        }
+
+        function loadChatSession(sessionId) {
+            const session = chatSessions.find((entry) => entry.id === sessionId);
+            if (!session) return;
+            activeSessionId = session.id;
+            closeQuickActions();
+            renderChatSessionMessages(session.messages);
+            clearNativeConversationHistory();
+            session.messages.forEach((message) => {
+                if (window.AndroidBridge && typeof window.AndroidBridge.appendConversationHistory === "function") {
+                    try { window.AndroidBridge.appendConversationHistory(message.role, message.text); } catch (_error) {}
+                }
+            });
+            setAppScreen(session.messages.length ? "chat" : "greeting");
+            closeSidebar();
+            renderSidebarHistory();
+        }
+
+        function startNewChat() {
+            if (!isAppMode) return;
+            activeSessionId = null;
+            closeQuickActions();
+            renderChatSessionMessages([]);
+            clearNativeConversationHistory();
+            setAppScreen("greeting");
+            if (composerInput) {
+                composerInput.value = "";
+                composerInput.blur();
+            }
+            updateComposerAction();
+            closeSidebar();
+            renderSidebarHistory();
+        }
+
+        function updateSidebarInferLabel() {
+            if (!sidebarInferLabel) return;
+            const modeLabel = inferMode === "local" ? "Local" : "Cloud";
+            sidebarInferLabel.innerHTML = `${modeLabel} inference<span>Tap to switch modes</span>`;
+        }
+
+        function openSidebar() {
+            if (!isAppMode || !appSidebar) return;
+            closeQuickActions();
+            renderSidebarHistory();
+            updateSidebarInferLabel();
+            document.body.classList.add("app-sidebar-open");
+            appSidebar.setAttribute("aria-hidden", "false");
+            if (sidebarBackdrop) sidebarBackdrop.setAttribute("aria-hidden", "false");
+        }
+
+        function closeSidebar() {
+            if (!appSidebar) return;
+            document.body.classList.remove("app-sidebar-open");
+            appSidebar.setAttribute("aria-hidden", "true");
+            if (sidebarBackdrop) sidebarBackdrop.setAttribute("aria-hidden", "true");
+        }
+
+        if (isAppMode) {
+            loadChatSessions();
+            renderSidebarHistory();
+            updateSidebarInferLabel();
+        }
 
         const CONTEXT_SOURCE_ICONS = {
             notifications: '<svg viewBox="0 0 24 24"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg>',
@@ -2516,6 +2969,24 @@
             }
         });
 
+        if (sidebarClose) sidebarClose.addEventListener("click", closeSidebar);
+        if (sidebarBackdrop) {
+            sidebarBackdrop.addEventListener("click", closeSidebar);
+        }
+        if (sidebarNewChat) sidebarNewChat.addEventListener("click", startNewChat);
+        if (sidebarSettingsBtn) {
+            sidebarSettingsBtn.addEventListener("click", () => {
+                closeSidebar();
+                openSettingsPanel();
+            });
+        }
+        if (sidebarInferBtn) {
+            sidebarInferBtn.addEventListener("click", () => {
+                setInferMode(inferMode === "local" ? "cloud" : "local");
+                updateSidebarInferLabel();
+            });
+        }
+
         if (menuBtn) {
             menuBtn.addEventListener("pointerdown", (event) => {
                 event.stopPropagation();
@@ -2525,7 +2996,7 @@
             });
             menuBtn.addEventListener("click", (event) => {
                 event.stopPropagation();
-                if (isAppMode) { openSettingsPanel(); return; }
+                if (isAppMode) { openSidebar(); return; }
                 runMcpSmokeTest();
             });
             menuBtn.addEventListener("contextmenu", (event) => {
@@ -2539,6 +3010,7 @@
         if (isAppMode && backToGreetingBtn) {
             backToGreetingBtn.addEventListener("click", (event) => {
                 event.stopPropagation();
+                closeSidebar();
                 closeQuickActions();
                 setAppScreen("greeting");
                 if (composerInput) {
@@ -2555,7 +3027,15 @@
                 ) {
                     closeQuickActions();
                 }
-                if (isAppMode) return;
+                if (isAppMode) {
+                    if (document.body.classList.contains("app-sidebar-open") &&
+                        !event.target.closest("#appSidebar") &&
+                        !event.target.closest(".menu-btn")
+                    ) {
+                        closeSidebar();
+                    }
+                    return;
+                }
                 if (!bottomEl.contains(event.target)) {
                     dismissAssistant();
                 }
