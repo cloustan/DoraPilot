@@ -2,9 +2,6 @@ package com.dorapilot.assistant
 
 import android.content.Context
 import android.os.Environment
-import ai.onnxruntime.OnnxTensor
-import ai.onnxruntime.OrtEnvironment
-import ai.onnxruntime.OrtSession
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -15,7 +12,7 @@ class LocalOnnxRuntimeEngine(
     private val config: BackendConfig
 ) {
     @Volatile
-    private var session: OrtSession? = null
+    private var session: Any? = null
     private val lock = Any()
     @Volatile
     private var genAiModel: Any? = null
@@ -50,6 +47,12 @@ class LocalOnnxRuntimeEngine(
             true
         }.getOrElse { false }
         result.put("genai_runtime_available", genAiRuntimeAvailable)
+        val rawOnnxRuntimeAvailable = runCatching {
+            Class.forName("ai.onnxruntime.OrtEnvironment")
+            Class.forName("ai.onnxruntime.OnnxTensor")
+            true
+        }.getOrElse { false }
+        result.put("raw_onnx_runtime_available", rawOnnxRuntimeAvailable)
 
         val fileCandidates = JSONArray()
         val resolvedFileDir = configuredModelDirCandidates()
@@ -89,7 +92,7 @@ class LocalOnnxRuntimeEngine(
         val hasUsableGenAiAssets = result.optBoolean("genai_has_genai_config", false) &&
             result.optBoolean("genai_has_model_onnx", false) &&
             result.optBoolean("genai_has_tokenizer", false)
-        val hasRawOnnx = config.localOnnxModelAsset.isNotBlank()
+        val hasRawOnnx = config.localOnnxModelAsset.isNotBlank() && rawOnnxRuntimeAvailable
         val ready = config.localAiEnabled && (hasRawOnnx || (genAiRuntimeAvailable && (hasUsableGenAiFiles || hasUsableGenAiAssets)))
         result.put("ready", ready)
         result.put(
@@ -97,6 +100,8 @@ class LocalOnnxRuntimeEngine(
             when {
                 !config.localAiEnabled -> "Local AI is disabled. Set DORA_LOCAL_AI_ENABLED=true."
                 ready -> "Local AI setup looks ready."
+                config.localOnnxModelAsset.isNotBlank() && !rawOnnxRuntimeAvailable ->
+                    "Raw ONNX Runtime is not packaged. Build with DORA_INCLUDE_ONNX_RUNTIME=true to enable raw ONNX tensors."
                 !genAiRuntimeAvailable && (config.localGenAiModelFilesDir.isNotBlank() || config.localGenAiModelAssetDir.isNotBlank()) ->
                     "GenAI runtime is not packaged. Add a 16 KB-compatible ONNX Runtime GenAI AAR and enable DORA_INCLUDE_LOCAL_GENAI_AAR=true."
                 else -> "Local model files are missing. Import a model folder with genai_config.json, model.onnx, and tokenizer.json."
@@ -129,6 +134,14 @@ class LocalOnnxRuntimeEngine(
                 .put("output", message)
                 .put("code", "missing_local_model")
         }
+        if (!isRawOnnxRuntimeAvailable()) {
+            val message = "Raw ONNX Runtime is not packaged. Build with DORA_INCLUDE_ONNX_RUNTIME=true to enable raw ONNX tensors."
+            return JSONObject()
+                .put("ok", false)
+                .put("error", message)
+                .put("output", message)
+                .put("code", "raw_onnx_runtime_missing")
+        }
 
         val inputShape = payload.optJSONArray("input_shape")
         val inputTensor = payload.optJSONArray("input_tensor")
@@ -156,21 +169,22 @@ class LocalOnnxRuntimeEngine(
                 "input_tensor size (${floats.size}) does not match input_shape product ($elementCount)"
             }
 
-            val tensor = OnnxTensor.createTensor(
-                OrtEnvironment.getEnvironment(),
-                FloatBuffer.wrap(floats),
-                shape
-            )
-            tensor.use { input ->
-                modelSession.run(mapOf(inputName to input)).use { result ->
-                    val outputValue = result[0]?.value
-                        ?: return@use JSONObject()
+            val tensor = createOnnxTensor(floats, shape)
+            useAutoCloseable(tensor) { input ->
+                val result = runRawSession(modelSession, inputName, input)
+                useAutoCloseable(result) { rawResult ->
+                    val outputValue = firstOnnxOutputValue(rawResult)
+                    if (outputValue == null) {
+                        JSONObject()
                             .put("ok", false)
                             .put("error", "Model produced no outputs.")
-                    JSONObject()
-                        .put("ok", true)
-                        .put("output_name", outputName)
-                        .put("output", convertOutput(outputValue))
+                            .put("output", "Model produced no outputs.")
+                    } else {
+                        JSONObject()
+                            .put("ok", true)
+                            .put("output_name", outputName)
+                            .put("output", convertOutput(outputValue))
+                    }
                 }
             }
         }.getOrElse { error ->
@@ -458,16 +472,58 @@ class LocalOnnxRuntimeEngine(
         return method.invoke(target, *args)
     }
 
-    private fun ensureSession(): OrtSession {
+    private fun isRawOnnxRuntimeAvailable(): Boolean = runCatching {
+        Class.forName("ai.onnxruntime.OrtEnvironment")
+        Class.forName("ai.onnxruntime.OnnxTensor")
+        Class.forName("ai.onnxruntime.OrtSession")
+        true
+    }.getOrDefault(false)
+
+    private fun createOnnxTensor(floats: FloatArray, shape: LongArray): Any {
+        val envClass = Class.forName("ai.onnxruntime.OrtEnvironment")
+        val tensorClass = Class.forName("ai.onnxruntime.OnnxTensor")
+        val env = envClass.getMethod("getEnvironment").invoke(null)
+        return tensorClass
+            .getMethod("createTensor", envClass, FloatBuffer::class.java, LongArray::class.java)
+            .invoke(null, env, FloatBuffer.wrap(floats), shape)
+            ?: throw IllegalStateException("OnnxTensor.createTensor returned null")
+    }
+
+    private fun runRawSession(modelSession: Any, inputName: String, tensor: Any): Any {
+        val run = modelSession.javaClass.methods.firstOrNull { method ->
+            method.name == "run" && method.parameterCount == 1 && Map::class.java.isAssignableFrom(method.parameterTypes[0])
+        } ?: throw IllegalStateException("OrtSession.run(Map) was not found.")
+        return run.invoke(modelSession, mapOf(inputName to tensor))
+            ?: throw IllegalStateException("OrtSession.run returned null")
+    }
+
+    private fun firstOnnxOutputValue(result: Any): Any? {
+        val optional = result.javaClass.getMethod("get", Integer.TYPE).invoke(result, 0) ?: return null
+        val output = optional.javaClass.getMethod("orElse", Any::class.java).invoke(optional, null) ?: return null
+        return output.javaClass.methods.firstOrNull { it.name == "getValue" && it.parameterCount == 0 }
+            ?.invoke(output)
+    }
+
+    private fun <T> useAutoCloseable(obj: Any, block: (Any) -> T): T {
+        return try {
+            block(obj)
+        } finally {
+            closeQuietly(obj)
+        }
+    }
+
+    private fun ensureSession(): Any {
         session?.let { return it }
         synchronized(lock) {
             session?.let { return it }
-            val env = OrtEnvironment.getEnvironment()
+            val envClass = Class.forName("ai.onnxruntime.OrtEnvironment")
+            val optionsClass = Class.forName("ai.onnxruntime.OrtSession\$SessionOptions")
+            val env = envClass.getMethod("getEnvironment").invoke(null)
             val modelPath = ensureModelCopied(config.localOnnxModelAsset)
-            val options = OrtSession.SessionOptions().apply {
-                setIntraOpNumThreads(1)
-            }
-            val created = env.createSession(modelPath, options)
+            val options = optionsClass.getConstructor().newInstance()
+            runCatching { optionsClass.getMethod("setIntraOpNumThreads", Integer.TYPE).invoke(options, 1) }
+            val created = envClass.getMethod("createSession", String::class.java, optionsClass)
+                .invoke(env, modelPath, options)
             session = created
             return created
         }

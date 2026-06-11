@@ -30,6 +30,8 @@ fun floatLiteral(value: String): String {
 val localGenAiSourceDir = configValue("DORA_LOCAL_GENAI_SOURCE_DIR", "")
 val includeLocalGenAiAar = configValue("DORA_INCLUDE_LOCAL_GENAI_AAR", "false")
     .toBooleanStrictOrNull() ?: false
+val includeOnnxRuntime = configValue("DORA_INCLUDE_ONNX_RUNTIME", "false")
+    .toBooleanStrictOrNull() ?: false
 val legacyNativePackaging = configValue("DORA_LEGACY_NATIVE_PACKAGING", "false")
     .toBooleanStrictOrNull() ?: false
 
@@ -174,7 +176,11 @@ dependencies {
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.work:work-runtime-ktx:2.10.1")
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.26.0")
+    if (includeOnnxRuntime) {
+        // Optional raw ONNX runtime. Disabled by default to keep shared APKs
+        // small; LocalOnnxRuntimeEngine reports setup guidance if it is absent.
+        implementation("com.microsoft.onnxruntime:onnxruntime-android:1.26.0")
+    }
     // Encrypted on-device store for personal context (SQLCipher + Keystore-backed key).
     // sqlcipher-android 4.16.0 ships 16 KB page-size compatible native libraries.
     implementation("net.zetetic:sqlcipher-android:4.16.0")
