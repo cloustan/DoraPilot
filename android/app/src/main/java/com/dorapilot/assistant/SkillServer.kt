@@ -91,12 +91,17 @@ class SkillServer(
         return JSONObject().put("ok", true).put("id", id).put("result", result).put("spoken", result)
     }
 
-    /** Execute a skill: stream step notifications, return the final result. */
-    fun execute(skill: JSONObject): String {
+    /**
+     * Execute a skill: stream step notifications, return the final result.
+     * [triggerNote] optionally appends the event that triggered the run (e.g. the
+     * incoming notification) so event-driven skills know what to act on.
+     */
+    fun execute(skill: JSONObject, triggerNote: String = ""): String {
         val id = skill.optLong("id").toInt()
         val name = skill.optString("name", "Skill")
-        val goal = skill.optString("instructions", "").trim()
+        val base = skill.optString("instructions", "").trim()
             .ifBlank { skill.optString("description", "") }
+        val goal = if (triggerNote.isBlank()) base else "$base\n\nTriggering event: $triggerNote"
         val allowed = toolNameSet(skill.optString("tools", "[]"))
         ProgressNotifier.step(context, id, name, "Starting\u2026")
         val result = HeadlessAgentRunner(context).run(

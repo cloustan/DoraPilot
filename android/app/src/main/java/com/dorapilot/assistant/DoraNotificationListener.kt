@@ -19,9 +19,6 @@ class DoraNotificationListener : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         sbn ?: return
-        val wantNotifications = config.isEnabled(ContextSourcesConfig.NOTIFICATIONS)
-        val wantMessages = config.isEnabled(ContextSourcesConfig.MESSAGES)
-        if (!wantNotifications && !wantMessages) return
         if (sbn.packageName == applicationContext.packageName) return
 
         val notification = sbn.notification ?: return
@@ -39,23 +36,31 @@ class DoraNotificationListener : NotificationListenerService() {
         val isMessage = category == Notification.CATEGORY_MESSAGE ||
             sbn.packageName in MESSAGING_PACKAGES
 
-        // If only messages are enabled, ignore non-message notifications.
-        if (!wantNotifications && wantMessages && !isMessage) return
-
         val appLabel = runCatching {
             val pm = applicationContext.packageManager
             pm.getApplicationLabel(pm.getApplicationInfo(sbn.packageName, 0)).toString()
         }.getOrDefault(sbn.packageName)
 
-        PersonalContextStore.insertItem(
-            context = applicationContext,
-            source = if (isMessage) "message" else "notification",
-            app = appLabel,
-            title = title,
-            body = text,
-            ts = sbn.postTime,
-            isMessage = isMessage
+        // Real-time event triggers fire any matching event-skills/automations.
+        // Independent of the storage toggles (the user opted in by creating one).
+        EventTriggerEvaluator.onNotification(
+            applicationContext, sbn.packageName, appLabel, title, text, isMessage
         )
+
+        // Capture into the encrypted context store, gated by the per-source toggles.
+        val wantNotifications = config.isEnabled(ContextSourcesConfig.NOTIFICATIONS)
+        val wantMessages = config.isEnabled(ContextSourcesConfig.MESSAGES)
+        if (wantNotifications || (wantMessages && isMessage)) {
+            PersonalContextStore.insertItem(
+                context = applicationContext,
+                source = if (isMessage) "message" else "notification",
+                app = appLabel,
+                title = title,
+                body = text,
+                ts = sbn.postTime,
+                isMessage = isMessage
+            )
+        }
     }
 
     override fun onNotificationRemoved(sbn: StatusBarNotification?) {
