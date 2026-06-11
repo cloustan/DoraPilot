@@ -61,6 +61,8 @@ class DoraNotificationListener : NotificationListenerService() {
                     applicationContext, sbn.packageName, appLabel, title, body, count > 1, originalKey
                 ) {
                     runCatching { cancelNotification(originalKey) }
+                        .onSuccess { android.util.Log.i(TAG, "Cancelled original $originalKey") }
+                        .onFailure { android.util.Log.w(TAG, "Cancel failed for $originalKey", it) }
                 }
             }
         }
@@ -112,20 +114,28 @@ class DoraNotificationListener : NotificationListenerService() {
     }
 
     companion object {
-        private val MESSAGING_PACKAGES = setOf(
-            "com.whatsapp",
-            "com.whatsapp.w4b",
-            "com.google.android.apps.messaging",
-            "com.samsung.android.messaging",
-            "org.telegram.messenger",
-            "org.thoughtcrime.securesms",
-            "com.facebook.orca",
-            "com.instagram.android",
-            "com.google.android.gm",
-            "com.discord",
-            "com.slack",
-            "com.microsoft.teams",
-            "com.linkedin.android"
-        )
+        private const val TAG = "DoraNotificationListener"
+        private val MESSAGING_PACKAGES = buildSet {
+            addAll(
+                setOf(
+                    "com.whatsapp",
+                    "com.whatsapp.w4b",
+                    "com.google.android.apps.messaging",
+                    "com.samsung.android.messaging",
+                    "org.telegram.messenger",
+                    "org.thoughtcrime.securesms",
+                    "com.facebook.orca",
+                    "com.instagram.android",
+                    "com.google.android.gm",
+                    "com.discord",
+                    "com.slack",
+                    "com.microsoft.teams",
+                    "com.linkedin.android"
+                )
+            )
+            // Debug-only: let adb `cmd notification post` exercise the message
+            // pipeline (shell-posted notifications have no messaging category).
+            if (com.dorapilot.BuildConfig.DEBUG) add("com.android.shell")
+        }
     }
 }
