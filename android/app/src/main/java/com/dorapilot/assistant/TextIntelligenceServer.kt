@@ -51,7 +51,7 @@ class TextIntelligenceServer(
             .put(JSONObject().put("role", "system").put("content", system))
             .put(JSONObject().put("role", "user").put("content", content.take(6000)))
 
-        val result = backendClient.complete(
+        val result = completeWithRetry(
             MainBackendClient.CompletionRequest(
                 endpoint = config.endpoint,
                 apiKey = config.apiKey,
@@ -59,12 +59,21 @@ class TextIntelligenceServer(
                 messages = messages,
                 headers = config.headers,
                 temperature = if (mode == Mode.PROOFREAD) 0.0 else 0.4
-            )
+            ),
+            maxRetries = 1
         )
         return if (result.ok) {
             JSONObject().put("ok", true).put("output", result.outputText.trim()).put("mode", mode.name.lowercase())
         } else {
-            JSONObject().put("ok", false).put("error", result.error.ifBlank { "Writing tool failed." })
+            val message = result.error.ifBlank {
+                if (result.status == 0) "Writing tool could not reach the backend." else "Writing tool failed."
+            }
+            JSONObject()
+                .put("ok", false)
+                .put("error", message)
+                .put("output", message)
+                .put("status", result.status)
+                .put("retryable", isRetryable(result))
         }
     }
 
@@ -143,4 +152,22 @@ class TextIntelligenceServer(
     private fun clipboardError(): JSONObject =
         JSONObject().put("ok", false)
             .put("output", "I couldn't read your clipboard. Copy some text first, then try again.")
+
+    private fun completeWithRetry(
+        request: MainBackendClient.CompletionRequest,
+        maxRetries: Int
+    ): MainBackendClient.CompletionResult {
+        var attempt = 0
+        var result = backendClient.complete(request)
+        while (!result.ok && attempt < maxRetries && isRetryable(result)) {
+            attempt += 1
+            runCatching { Thread.sleep(300L * attempt) }
+            result = backendClient.complete(request)
+        }
+        return result
+    }
+
+    private fun isRetryable(result: MainBackendClient.CompletionResult): Boolean {
+        return result.status == 0 || result.status == 408 || result.status == 429 || result.status >= 500
+    }
 }
