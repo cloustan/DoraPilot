@@ -28,6 +28,8 @@ fun floatLiteral(value: String): String {
     return if (trimmed.endsWith("f", ignoreCase = true)) trimmed else "${trimmed}f"
 }
 val localGenAiSourceDir = configValue("DORA_LOCAL_GENAI_SOURCE_DIR", "")
+val includeLocalGenAiAar = configValue("DORA_INCLUDE_LOCAL_GENAI_AAR", "false")
+    .toBooleanStrictOrNull() ?: false
 
 android {
     namespace = "com.dorapilot"
@@ -131,6 +133,15 @@ android {
         }
     }
 
+    packaging {
+        jniLibs {
+            // Keep native libraries uncompressed and zip-aligned by AGP. This is
+            // required for Android devices with 16 KB memory pages, but each
+            // native library must still be built with 16 KB ELF LOAD alignment.
+            useLegacyPackaging = false
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -141,14 +152,21 @@ android {
 }
 
 dependencies {
-    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar", "*.aar"))))
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.jar"))))
+    if (includeLocalGenAiAar) {
+        // Optional local GenAI runtime. Only use an AAR whose bundled .so files
+        // pass 16 KB ELF alignment checks; older public GenAI AARs fail Play's
+        // 16 KB page-size validation.
+        implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("onnxruntime-genai-android*.aar"))))
+    }
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.work:work-runtime-ktx:2.10.1")
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:+")
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.26.0")
     // Encrypted on-device store for personal context (SQLCipher + Keystore-backed key).
-    implementation("net.zetetic:android-database-sqlcipher:4.5.4")
-    implementation("androidx.sqlite:sqlite-ktx:2.4.0")
+    // sqlcipher-android 4.16.0 ships 16 KB page-size compatible native libraries.
+    implementation("net.zetetic:sqlcipher-android:4.16.0")
+    implementation("androidx.sqlite:sqlite:2.6.2")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 }

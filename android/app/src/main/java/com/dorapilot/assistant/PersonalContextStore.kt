@@ -2,7 +2,7 @@ package com.dorapilot.assistant
 
 import android.content.ContentValues
 import android.content.Context
-import net.sqlcipher.database.SQLiteDatabase
+import net.zetetic.database.sqlcipher.SQLiteDatabase
 import org.json.JSONObject
 
 /**
@@ -25,11 +25,11 @@ object PersonalContextStore {
     private fun db(context: Context): SQLiteDatabase {
         database?.let { if (it.isOpen) return it }
         val appCtx = context.applicationContext
-        SQLiteDatabase.loadLibs(appCtx)
+        System.loadLibrary("sqlcipher")
         val file = appCtx.getDatabasePath(DB_NAME)
         file.parentFile?.mkdirs()
         val password = SecureContextKey.getPassphraseString(appCtx)
-        val opened = SQLiteDatabase.openOrCreateDatabase(file, password, null)
+        val opened = SQLiteDatabase.openOrCreateDatabase(file, password, null, null)
         opened.execSQL(
             "CREATE TABLE IF NOT EXISTS items(" +
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, source TEXT, app TEXT, title TEXT, " +
