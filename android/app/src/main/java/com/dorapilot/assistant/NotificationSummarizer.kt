@@ -71,9 +71,11 @@ object NotificationSummarizer {
                 val system: String
                 val prompt: String
                 if (isConversation) {
-                    system = "You summarize a chat conversation in one short, clear sentence " +
-                        "(who said what / what's being asked). Output only the summary, no preamble."
-                    prompt = "Conversation in ${title.ifBlank { app }}:\n$text"
+                    system = "You condense a chat conversation into at most two short sentences. " +
+                        "Prioritize anything the user must DO (with deadlines), then the key " +
+                        "decisions or plans. Do NOT copy messages verbatim - write a new condensed " +
+                        "overview of the WHOLE conversation. Output only the summary, no preamble."
+                    prompt = "Conversation in ${title.ifBlank { app }}:\n$text\n\nSummary of the whole conversation:"
                 } else {
                     system = "You summarize a chat message in one short, clear sentence. " +
                         "Output only the summary, no preamble."
@@ -83,7 +85,7 @@ object NotificationSummarizer {
                     JSONObject()
                         .put("system", system)
                         .put("prompt", prompt)
-                        .put("max_tokens", if (isConversation) 110 else 80)
+                        .put("max_tokens", if (isConversation) 130 else 80)
                         .put("temperature", 0.2)
                 )
                 val summary = result.optString("output", "").trim().removeSurrounding("\"")
