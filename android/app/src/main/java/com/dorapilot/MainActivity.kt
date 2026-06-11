@@ -88,6 +88,7 @@ class MainActivity : AppCompatActivity() {
     // Conversation context lives natively only; the WebView never stores prompts or history.
     private val conversationHistory = ArrayDeque<JSONObject>()
     private val capabilityScanner by lazy { SystemCapabilityScanner(this) }
+    private val appCapabilityIndexer by lazy { com.dorapilot.assistant.AppCapabilityIndexer(this) }
     private val contextTriageServer by lazy {
         ContextTriageScreenServer(
             activeScreenProvider = { buildMainScreenSnapshot() },
@@ -164,7 +165,8 @@ class MainActivity : AppCompatActivity() {
             textIntelligence = textIntelligenceServer,
             screenIntelligence = screenIntelligenceServer,
             timelineIntelligence = timelineIntelligenceServer,
-            webSearch = deviceWebSearchServer
+            webSearch = deviceWebSearchServer,
+            appCapabilities = appCapabilityIndexer
         )
     }
 
@@ -203,6 +205,8 @@ class MainActivity : AppCompatActivity() {
             runCatching {
                 val stats = capabilityScanner.ensureFreshIndex()
                 emitTerminalStream("system", "Navigation index ready: $stats")
+                val capStats = appCapabilityIndexer.ensureFresh()
+                emitTerminalStream("system", "App capability index ready: $capStats")
             }.onFailure { error ->
                 emitTerminalStream("error", "Index warm-up failed: ${error.message}")
             }

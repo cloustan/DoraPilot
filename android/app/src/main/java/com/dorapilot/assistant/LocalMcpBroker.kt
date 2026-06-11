@@ -14,7 +14,8 @@ class LocalMcpBroker(
     private val textIntelligence: TextIntelligenceServer,
     private val screenIntelligence: ScreenIntelligenceServer,
     private val timelineIntelligence: TimelineIntelligenceServer,
-    private val webSearch: DeviceWebSearchServer
+    private val webSearch: DeviceWebSearchServer,
+    private val appCapabilities: AppCapabilityIndexer
 ) {
     fun listTools(): JSONArray {
         return JSONArray().apply {
@@ -121,6 +122,44 @@ class LocalMcpBroker(
                             )
                             .put("required", JSONArray().put("actionType"))
                     )
+            )
+            put(
+                JSONObject()
+                    .put("name", "app_capabilities.search")
+                    .put(
+                        "description",
+                        "Search the device-verified registry of app capabilities (installed " +
+                            "apps + standard intents + curated app deep links) for what can " +
+                            "fulfil a request, e.g. 'play music', 'message someone', 'navigate'. " +
+                            "Returns ranked capabilities with their verified intent template " +
+                            "(action, uri_template with {slots}, mime, extras, package). Use the " +
+                            "returned template with intent_routing_server.start_intent, filling " +
+                            "the {slots}."
+                    )
+                    .put(
+                        "input_schema",
+                        JSONObject()
+                            .put("type", "object")
+                            .put(
+                                "properties",
+                                JSONObject()
+                                    .put("query", JSONObject().put("type", "string"))
+                                    .put("limit", JSONObject().put("type", "integer"))
+                            )
+                            .put("required", JSONArray().put("query"))
+                    )
+            )
+            put(
+                JSONObject()
+                    .put("name", "app_capabilities.reindex")
+                    .put("description", "Rebuild the device-verified app capability registry.")
+                    .put("input_schema", JSONObject().put("type", "object"))
+            )
+            put(
+                JSONObject()
+                    .put("name", "app_capabilities.quick_stats")
+                    .put("description", "Report app capability registry size and freshness.")
+                    .put("input_schema", JSONObject().put("type", "object"))
             )
             put(
                 JSONObject()
@@ -577,6 +616,11 @@ class LocalMcpBroker(
                     packageName = args.optString("package", "").trim()
                 )
             }
+            "app_capabilities.search" -> {
+                appCapabilities.search(args.optString("query", "").trim(), args.optInt("limit", 12))
+            }
+            "app_capabilities.reindex" -> appCapabilities.reindex()
+            "app_capabilities.quick_stats" -> appCapabilities.quickStats()
             "intent_routing_server.start_intent" -> {
                 intentRouter.startIntent(args)
             }

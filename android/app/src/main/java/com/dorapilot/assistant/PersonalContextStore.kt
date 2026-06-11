@@ -39,8 +39,106 @@ object PersonalContextStore {
         opened.execSQL(
             "CREATE TABLE IF NOT EXISTS memory(k TEXT PRIMARY KEY, v TEXT, updated INTEGER)"
         )
+        opened.execSQL(
+            "CREATE TABLE IF NOT EXISTS capabilities(" +
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, package TEXT, app_label TEXT, " +
+                "cap_type TEXT, name TEXT, action TEXT, uri_template TEXT, mime TEXT, " +
+                "slots TEXT, extras TEXT, keywords TEXT, verified INTEGER, updated INTEGER, " +
+                "UNIQUE(package, name))"
+        )
         database = opened
         return opened
+    }
+
+    // ---- app capability registry ------------------------------------------
+
+    fun upsertCapability(
+        context: Context,
+        packageName: String,
+        appLabel: String,
+        capType: String,
+        name: String,
+        action: String,
+        uriTemplate: String,
+        mime: String,
+        slots: String,
+        extras: String,
+        keywords: String
+    ) {
+        runCatching {
+            val values = ContentValues().apply {
+                put("package", packageName)
+                put("app_label", appLabel)
+                put("cap_type", capType)
+                put("name", name)
+                put("action", action)
+                put("uri_template", uriTemplate)
+                put("mime", mime)
+                put("slots", slots)
+                put("extras", extras)
+                put("keywords", keywords.lowercase())
+                put("verified", 1)
+                put("updated", System.currentTimeMillis())
+            }
+            db(context).insertWithOnConflict("capabilities", null, values, SQLiteDatabase.CONFLICT_REPLACE)
+        }
+    }
+
+    fun clearCapabilities(context: Context) {
+        runCatching { db(context).delete("capabilities", null, null) }
+    }
+
+    fun capabilityCount(context: Context): Int = runCatching {
+        db(context).rawQuery("SELECT COUNT(*) FROM capabilities", null).use { c ->
+            if (c.moveToFirst()) c.getInt(0) else 0
+        }
+    }.getOrDefault(0)
+
+    /** Rows whose name/keywords/app_label match ANY query term (LIKE). Indexer scores them. */
+    fun searchCapabilities(context: Context, terms: List<String>, limit: Int = 80): List<JSONObject> {
+        if (terms.isEmpty()) return allCapabilities(context, limit)
+        val safe = terms.take(8)
+        val clause = safe.joinToString(" OR ") {
+            "(name LIKE ? OR keywords LIKE ? OR app_label LIKE ? OR package LIKE ?)"
+        }
+        val args = mutableListOf<String>()
+        safe.forEach { t -> val like = "%$t%"; repeat(4) { args.add(like) } }
+        args.add(limit.coerceIn(1, 400).toString())
+        return capabilityQuery(
+            context,
+            "SELECT package,app_label,cap_type,name,action,uri_template,mime,slots,extras,keywords " +
+                "FROM capabilities WHERE $clause LIMIT ?",
+            args.toTypedArray()
+        )
+    }
+
+    fun allCapabilities(context: Context, limit: Int = 200): List<JSONObject> = capabilityQuery(
+        context,
+        "SELECT package,app_label,cap_type,name,action,uri_template,mime,slots,extras,keywords " +
+            "FROM capabilities LIMIT ?",
+        arrayOf(limit.coerceIn(1, 1000).toString())
+    )
+
+    private fun capabilityQuery(context: Context, sql: String, args: Array<String>): List<JSONObject> {
+        val out = mutableListOf<JSONObject>()
+        runCatching {
+            db(context).rawQuery(sql, args).use { c ->
+                while (c.moveToNext()) {
+                    out += JSONObject()
+                        .put("package", c.getString(0))
+                        .put("app_label", c.getString(1))
+                        .put("cap_type", c.getString(2))
+                        .put("name", c.getString(3))
+                        .put("action", c.getString(4))
+                        .put("uri_template", c.getString(5))
+                        .put("mime", c.getString(6))
+                        .put("slots", c.getString(7))
+                        .put("extras", c.getString(8))
+                        .put("keywords", c.getString(9))
+                }
+            }
+        }
+        return out
     }
 
     // ---- corpus ------------------------------------------------------------

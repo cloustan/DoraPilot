@@ -60,6 +60,7 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
         }
     )
     private val capabilityScanner = SystemCapabilityScanner(context)
+    private val appCapabilityIndexer = AppCapabilityIndexer(context)
     private val vibrator: Vibrator? by lazy {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)?.defaultVibrator
@@ -134,7 +135,8 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
         textIntelligence = textIntelligenceServer,
         screenIntelligence = screenIntelligenceServer,
         timelineIntelligence = timelineIntelligenceServer,
-        webSearch = deviceWebSearchServer
+        webSearch = deviceWebSearchServer,
+        appCapabilities = appCapabilityIndexer
     )
 
     @Volatile

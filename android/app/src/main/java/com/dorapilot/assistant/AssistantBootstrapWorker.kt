@@ -19,6 +19,8 @@ class AssistantBootstrapWorker(
             val scanner = SystemCapabilityScanner(applicationContext)
             val result = scanner.indexAllApps()
             Log.i(TAG, "Capability scan completed: $result")
+            val capResult = AppCapabilityIndexer(applicationContext).ensureFresh()
+            Log.i(TAG, "App capability index: $capResult")
         }.fold(
             onSuccess = { Result.success() },
             onFailure = { error ->
