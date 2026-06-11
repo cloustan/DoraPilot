@@ -43,6 +43,7 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
     private val mainBackendClient = MainBackendClient()
     private val backendConfig = BackendConfig.load()
     private val localOnnxRuntimeEngine = LocalOnnxRuntimeEngine(context, backendConfig)
+    private val modelRegistryDownloader = ModelRegistryDownloader(context, backendConfig)
     private val naturalTtsPlayer = NaturalTtsPlayer(
         context = context,
         config = backendConfig,
@@ -342,7 +343,22 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
                     runCatching {
                         val useLocal = payload.optBoolean("use_local", false)
                         if (useLocal) {
+                            val prompt = payload.optString("prompt", "").trim()
+                            appendConversationHistory("user", prompt)
+                            // Instant device control still works offline in local mode
+                            // (the router is native and needs no network).
+                            val deviceResult = deviceCommandRouter.tryHandle(prompt)
+                            if (deviceResult != null) {
+                                if (deviceResult.optBoolean("ok", false)) {
+                                    appendConversationHistory("assistant", deviceResult.optString("output", ""))
+                                }
+                                emitTerminalStream("backend", "inference result=$deviceResult")
+                                return@execute
+                            }
                             val localResult = localOnnxRuntimeEngine.infer(payload)
+                            if (localResult.optBoolean("ok", false)) {
+                                appendConversationHistory("assistant", localResult.optString("output", ""))
+                            }
                             emitTerminalStream("local_ai", "inference result=$localResult")
                         } else {
                             val prompt = payload.optString("prompt", "").trim()
@@ -397,6 +413,25 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
                         emitTerminalStream("local_ai", "loader check=$details")
                     }.onFailure { error ->
                         emitTerminalStream("error", "agent.local_loader_check failed: ${error.message}")
+                    }
+                }
+                "model.registry_status" -> backgroundExecutor.execute {
+                    runCatching {
+                        emitTerminalStream("model_registry", "status=${modelRegistryDownloader.status()}")
+                    }.onFailure { error ->
+                        emitTerminalStream("error", "model.registry_status failed: ${error.message}")
+                    }
+                }
+                "model.registry_download" -> backgroundExecutor.execute {
+                    runCatching {
+                        val result = modelRegistryDownloader.download { progress ->
+                            emitTerminalStream("model_registry", progress)
+                        }
+                        if (result.optBoolean("ok", false)) {
+                            emitTerminalStream("local_ai", "loader check=${localOnnxRuntimeEngine.inspectLocalSetup()}")
+                        }
+                    }.onFailure { error ->
+                        emitTerminalStream("error", "model.registry_download failed: ${error.message}")
                     }
                 }
                 "agent.run_task" -> backgroundExecutor.execute {

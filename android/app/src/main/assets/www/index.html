@@ -693,6 +693,19 @@
         .settings-row .sr-title { font-size: 15px; font-weight: 600; color: #16233f; }
         .settings-row .sr-desc { font-size: 12.5px; color: rgba(22, 35, 63, 0.58); margin-top: 2px; }
         .settings-row .sr-desc.needs { color: #c2410c; }
+        .model-dl-btn {
+            flex: 0 0 auto;
+            border: none;
+            border-radius: 999px;
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #fff;
+            background: #2563eb;
+            cursor: pointer;
+        }
+        .model-dl-btn:disabled { background: rgba(37, 99, 235, 0.45); cursor: default; }
+        .model-dl-btn.is-ready { background: #16a34a; }
 
         .switch { position: relative; flex: 0 0 auto; width: 50px; height: 30px; }
         .switch input { opacity: 0; width: 0; height: 0; }
@@ -2161,6 +2174,9 @@
                     finalizeAssistant(normalized);
                 }
             }
+            if (channel === "model_registry") {
+                handleModelRegistryStream(chunk);
+            }
             if (channel === "local_ai" || channel === "backend") {
                 const result = parseInferenceResult(chunk);
                 if (result && result.ok) {
@@ -2762,7 +2778,8 @@
             });
         }
 
-        if (isAppMode && composerModeBtn) {
+        // Local/Cloud toggle is available in both the app and the assistant overlay.
+        if (composerModeBtn) {
             composerModeBtn.addEventListener("click", (event) => {
                 event.stopPropagation();
                 setInferMode(inferMode === "local" ? "cloud" : "local");
@@ -2992,12 +3009,98 @@
             { key: "usage", title: "App usage", desc: "Your most-used apps" }
         ];
 
+        const MODEL_ROW_ICON = '<svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
+        let modelRegistryEls = null;
+
+        function formatGb(bytes) {
+            return (bytes / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+        }
+
+        function renderLocalModelRow() {
+            const row = document.createElement("div");
+            row.className = "settings-row";
+            row.innerHTML =
+                `<span class="sr-icon">${MODEL_ROW_ICON}</span>` +
+                '<div class="sr-body"><div class="sr-title">Local AI model</div>' +
+                '<div class="sr-desc">Checking model status…</div></div>' +
+                '<button class="model-dl-btn" type="button" disabled>Download</button>';
+            const desc = row.querySelector(".sr-desc");
+            const btn = row.querySelector(".model-dl-btn");
+            btn.addEventListener("click", () => {
+                btn.disabled = true;
+                btn.textContent = "Downloading…";
+                desc.textContent = "Starting download…";
+                dispatchAgentAction("model.registry_download");
+            });
+            modelRegistryEls = { desc, btn };
+            return row;
+        }
+
+        function handleModelRegistryStream(chunk) {
+            if (!modelRegistryEls) return;
+            const { desc, btn } = modelRegistryEls;
+            let payload = null;
+            const text = `${chunk || ""}`.trim();
+            try {
+                payload = JSON.parse(text.startsWith("status=") ? text.slice(7) : text);
+            } catch (_e) {
+                return;
+            }
+            if (text.startsWith("status=")) {
+                if (!payload.ok) {
+                    desc.textContent = payload.error || "Registry unreachable.";
+                    btn.disabled = true;
+                } else if (payload.in_progress) {
+                    desc.textContent = "Download in progress…";
+                    btn.disabled = true;
+                    btn.textContent = "Downloading…";
+                } else if (payload.complete) {
+                    desc.textContent = `On device · ${formatGb(payload.total_size)}`;
+                    btn.disabled = true;
+                    btn.textContent = "Installed";
+                    btn.classList.add("is-ready");
+                } else {
+                    desc.textContent = `${formatGb(payload.total_size)} download required`;
+                    btn.disabled = false;
+                    btn.textContent = "Download";
+                    btn.classList.remove("is-ready");
+                }
+                return;
+            }
+            switch (payload.state) {
+                case "checking":
+                    desc.textContent = "Contacting model registry…";
+                    break;
+                case "downloading":
+                    desc.textContent = `Downloading ${payload.file || ""} · ${payload.pct || 0}%`;
+                    btn.disabled = true;
+                    btn.textContent = `${payload.pct || 0}%`;
+                    break;
+                case "verifying":
+                    desc.textContent = "Verifying files…";
+                    break;
+                case "ready":
+                    desc.textContent = `On device · ${formatGb(payload.total_bytes || 0)}`;
+                    btn.disabled = true;
+                    btn.textContent = "Installed";
+                    btn.classList.add("is-ready");
+                    break;
+                case "error":
+                    desc.textContent = payload.message || "Download failed.";
+                    btn.disabled = false;
+                    btn.textContent = "Retry";
+                    break;
+            }
+        }
+
         function loadContextSettings() {
             if (!settingsList || !window.AndroidBridge || typeof window.AndroidBridge.getContextSettings !== "function") return;
             let data = null;
             try { data = JSON.parse(window.AndroidBridge.getContextSettings()); } catch (_e) { data = null; }
             const sources = (data && data.sources) || {};
             settingsList.innerHTML = "";
+            settingsList.appendChild(renderLocalModelRow());
+            dispatchAgentAction("model.registry_status");
             CONTEXT_SOURCES.forEach((src) => {
                 const st = sources[src.key] || { enabled: false, granted: false };
                 const needsPerm = st.enabled && !st.granted;
