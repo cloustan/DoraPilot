@@ -37,15 +37,18 @@ class MainBackendClient {
         val history = args.optJSONArray("history") ?: JSONArray()
 
         if (prompt.isEmpty()) {
-            return JSONObject().put("ok", false).put("error", "Missing required argument: prompt")
+            return errorJson("missing_prompt", "Missing required argument: prompt")
         }
         if (apiKey.isEmpty()) {
-            return JSONObject().put("ok", false).put("error", "Missing required argument: api_key")
+            return errorJson(
+                "missing_api_key",
+                "Backend is not configured. Add DORA_BACKEND_API_KEY to use cloud answers."
+            )
         }
 
         val uri = Uri.parse(endpoint)
         if (uri.scheme != "https") {
-            return JSONObject().put("ok", false).put("error", "Only https URLs are allowed")
+            return errorJson("invalid_endpoint", "Only https backend URLs are allowed")
         }
 
         val messages = JSONArray()
@@ -71,14 +74,16 @@ class MainBackendClient {
             headers = headers
         )
         val result = complete(request)
+        val errorText = result.error.ifBlank { "Inference request failed." }
         return JSONObject()
             .put("ok", result.ok)
             .put("status", result.status)
             .put("endpoint", endpoint)
             .put("model", model)
-            .put("output", result.outputText.take(1200))
+            .put("output", if (result.ok) result.outputText.take(1200) else errorText)
             .put("body_preview", result.body.take(600))
-            .put("error", result.error)
+            .put("error", if (result.ok) "" else errorText)
+            .put("retryable", isRetryable(result.status))
     }
 
     fun complete(request: CompletionRequest): CompletionResult {
@@ -135,7 +140,7 @@ class MainBackendClient {
                 message = message,
                 toolCalls = toolCalls,
                 outputText = output,
-                error = if (status in 200..299) "" else body.take(500)
+                error = if (status in 200..299) "" else extractErrorText(parsed, body, status)
             )
         }.getOrElse { error ->
             CompletionResult(
@@ -145,12 +150,32 @@ class MainBackendClient {
                 message = JSONObject(),
                 toolCalls = JSONArray(),
                 outputText = "",
-                error = error.message ?: "Inference call failed"
+                error = error.message?.takeIf { it.isNotBlank() } ?: "Inference call failed"
             )
         }.also {
             connection.disconnect()
         }
     }
+
+    private fun errorJson(code: String, message: String): JSONObject =
+        JSONObject()
+            .put("ok", false)
+            .put("code", code)
+            .put("error", message)
+            .put("output", message)
+            .put("retryable", false)
+
+    private fun extractErrorText(parsed: JSONObject, body: String, status: Int): String {
+        val apiError = parsed.optJSONObject("error")
+        val message = apiError?.optString("message", "")?.trim().orEmpty()
+        if (message.isNotBlank()) return message.take(500)
+        val direct = parsed.optString("message", "").trim()
+        if (direct.isNotBlank()) return direct.take(500)
+        return body.take(500).ifBlank { "Backend request failed with HTTP $status." }
+    }
+
+    private fun isRetryable(status: Int): Boolean =
+        status == 0 || status == 408 || status == 429 || status >= 500
 
     private fun extractAssistantText(json: JSONObject): String {
         val choices = json.optJSONArray("choices") ?: return ""

@@ -83,14 +83,36 @@ class LocalOnnxRuntimeEngine(
             result.put("genai_has_model_onnx", listing.contains("model.onnx"))
             result.put("genai_has_tokenizer", listing.contains("tokenizer.json"))
         }
+        val hasUsableGenAiFiles = result.optBoolean("genai_files_has_genai_config", false) &&
+            result.optBoolean("genai_files_has_model_onnx", false) &&
+            result.optBoolean("genai_files_has_tokenizer", false)
+        val hasUsableGenAiAssets = result.optBoolean("genai_has_genai_config", false) &&
+            result.optBoolean("genai_has_model_onnx", false) &&
+            result.optBoolean("genai_has_tokenizer", false)
+        val hasRawOnnx = config.localOnnxModelAsset.isNotBlank()
+        val ready = config.localAiEnabled && (hasRawOnnx || (genAiRuntimeAvailable && (hasUsableGenAiFiles || hasUsableGenAiAssets)))
+        result.put("ready", ready)
+        result.put(
+            "setup_message",
+            when {
+                !config.localAiEnabled -> "Local AI is disabled. Set DORA_LOCAL_AI_ENABLED=true."
+                ready -> "Local AI setup looks ready."
+                !genAiRuntimeAvailable && (config.localGenAiModelFilesDir.isNotBlank() || config.localGenAiModelAssetDir.isNotBlank()) ->
+                    "GenAI runtime is not packaged. Add a 16 KB-compatible ONNX Runtime GenAI AAR and enable DORA_INCLUDE_LOCAL_GENAI_AAR=true."
+                else -> "Local model files are missing. Import a model folder with genai_config.json, model.onnx, and tokenizer.json."
+            }
+        )
         return result
     }
 
     fun infer(payload: JSONObject): JSONObject {
         if (!config.localAiEnabled) {
+            val message = "Local AI is disabled. Set DORA_LOCAL_AI_ENABLED=true."
             return JSONObject()
                 .put("ok", false)
-                .put("error", "Local AI is disabled. Set DORA_LOCAL_AI_ENABLED=true.")
+                .put("error", message)
+                .put("output", message)
+                .put("code", "local_ai_disabled")
         }
         val prompt = payload.optString("prompt", "").trim()
         if (prompt.isNotBlank() &&
@@ -100,23 +122,23 @@ class LocalOnnxRuntimeEngine(
         }
 
         if (config.localOnnxModelAsset.isBlank()) {
+            val message = "Missing DORA_LOCAL_ONNX_MODEL_ASSET. For LLM prompts, set DORA_LOCAL_GENAI_MODEL_ASSET_DIR."
             return JSONObject()
                 .put("ok", false)
-                .put(
-                    "error",
-                    "Missing DORA_LOCAL_ONNX_MODEL_ASSET. For LLM prompts, set DORA_LOCAL_GENAI_MODEL_ASSET_DIR."
-                )
+                .put("error", message)
+                .put("output", message)
+                .put("code", "missing_local_model")
         }
 
         val inputShape = payload.optJSONArray("input_shape")
         val inputTensor = payload.optJSONArray("input_tensor")
         if (inputShape == null || inputTensor == null) {
+            val message = "Local inference expects prompt for GenAI, or input_shape/input_tensor for raw ONNX."
             return JSONObject()
                 .put("ok", false)
-                .put(
-                    "error",
-                    "Local inference expects prompt for GenAI, or input_shape/input_tensor for raw ONNX."
-                )
+                .put("error", message)
+                .put("output", message)
+                .put("code", "invalid_local_payload")
         }
 
         return runCatching {
@@ -152,9 +174,12 @@ class LocalOnnxRuntimeEngine(
                 }
             }
         }.getOrElse { error ->
+            val message = error.message ?: "ONNX inference failed"
             JSONObject()
                 .put("ok", false)
-                .put("error", error.message ?: "ONNX inference failed")
+                .put("error", message)
+                .put("output", message)
+                .put("code", "raw_onnx_failed")
         }
     }
 
@@ -230,11 +255,14 @@ class LocalOnnxRuntimeEngine(
                 closeQuietly(params)
             }
         }.getOrElse { error ->
+            val message = describeError(stage, error)
             JSONObject()
                 .put("ok", false)
                 .put("mode", "genai")
                 .put("stage", stage)
-                .put("error", describeError(stage, error))
+                .put("error", message)
+                .put("output", message)
+                .put("code", "genai_failed")
         }
     }
 

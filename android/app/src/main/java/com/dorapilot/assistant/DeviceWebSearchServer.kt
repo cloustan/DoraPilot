@@ -3,6 +3,7 @@ package com.dorapilot.assistant
 import android.net.Uri
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
@@ -19,24 +20,35 @@ class DeviceWebSearchServer {
         }
 
         val candidates = JSONArray()
-        runCatching { duckDuckGo(q) }.getOrNull()?.let { merge(candidates, it) }
+        val providerErrors = JSONArray()
+        runCatching { duckDuckGo(q) }
+            .onSuccess { merge(candidates, it) }
+            .onFailure { providerErrors.put(providerError("DuckDuckGo", it)) }
         if (candidates.length() < 2) {
-            runCatching { wikipedia(q) }.getOrNull()?.let { merge(candidates, it) }
+            runCatching { wikipedia(q) }
+                .onSuccess { merge(candidates, it) }
+                .onFailure { providerErrors.put(providerError("Wikipedia", it)) }
         }
 
         val ranked = rank(q, candidates)
         if (ranked.length() == 0) {
             val browserUrl = "https://duckduckgo.com/?q=${Uri.encode(q)}"
+            val hadProviderFailure = providerErrors.length() > 0
+            val message = if (hadProviderFailure) {
+                "Instant web providers were unavailable from this device/network. Open this search: $browserUrl"
+            } else {
+                "I couldn't get an instant free result on-device. Open this search: $browserUrl"
+            }
             return JSONObject()
                 .put("ok", true)
                 .put("query", q)
                 .put("mode", "browser_fallback")
-                .put(
-                    "output",
-                    "I couldn't get an instant free result on-device. Open this search: $browserUrl"
-                )
+                .put("output", message)
                 .put("url", browserUrl)
                 .put("results", JSONArray())
+                .put("provider_errors", providerErrors)
+                .put("needs_network", hadProviderFailure)
+                .put("retryable", hadProviderFailure)
         }
 
         return JSONObject()
@@ -45,6 +57,8 @@ class DeviceWebSearchServer {
             .put("mode", "device_web_search")
             .put("output", formatAnswer(q, ranked))
             .put("results", ranked)
+            .put("provider_errors", providerErrors)
+            .put("retryable", false)
     }
 
     private fun duckDuckGo(query: String): JSONArray {
@@ -176,6 +190,15 @@ class DeviceWebSearchServer {
         } finally {
             connection.disconnect()
         }
+    }
+
+    private fun providerError(provider: String, error: Throwable): JSONObject {
+        val root = error.cause ?: error
+        return JSONObject()
+            .put("provider", provider)
+            .put("type", root.javaClass.simpleName)
+            .put("message", root.message?.take(180) ?: root.toString().take(180))
+            .put("network_error", root is IOException)
     }
 
     private fun enc(value: String): String = URLEncoder.encode(value, "UTF-8")
