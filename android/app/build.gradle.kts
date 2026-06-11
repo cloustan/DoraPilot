@@ -30,6 +30,8 @@ fun floatLiteral(value: String): String {
 val localGenAiSourceDir = configValue("DORA_LOCAL_GENAI_SOURCE_DIR", "")
 val includeLocalGenAiAar = configValue("DORA_INCLUDE_LOCAL_GENAI_AAR", "false")
     .toBooleanStrictOrNull() ?: false
+val legacyNativePackaging = configValue("DORA_LEGACY_NATIVE_PACKAGING", "false")
+    .toBooleanStrictOrNull() ?: false
 
 android {
     namespace = "com.dorapilot"
@@ -138,7 +140,7 @@ android {
             // Keep native libraries uncompressed and zip-aligned by AGP. This is
             // required for Android devices with 16 KB memory pages, but each
             // native library must still be built with 16 KB ELF LOAD alignment.
-            useLegacyPackaging = false
+            useLegacyPackaging = legacyNativePackaging
         }
     }
 
