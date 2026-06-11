@@ -59,10 +59,10 @@ class DoraNotificationListener : NotificationListenerService() {
             val conversation = extractConversationMessages(notification)
             val body = if (conversation.isNotEmpty()) conversation.joinToString("\n") else text
             val count = if (conversation.isNotEmpty()) conversation.size else if (text.isNotEmpty()) 1 else 0
-            if (NotificationSummarizer.shouldSummarize(body, isMessage, count)) {
+            if (NotificationSummarizer.shouldSummarize(body, count)) {
                 val originalKey = sbn.key
                 NotificationSummarizer.summarize(
-                    applicationContext, sbn.packageName, appLabel, title, body, count > 1, originalKey
+                    applicationContext, sbn.packageName, appLabel, title, body, count > 1, isMessage, originalKey
                 ) {
                     runCatching { cancelNotification(originalKey) }
                         .onSuccess { android.util.Log.i(TAG, "Cancelled original $originalKey") }

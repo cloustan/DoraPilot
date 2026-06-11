@@ -34,16 +34,19 @@ object NotificationSummarizer {
         ContextSourcesConfig(context).isEnabled(ContextSourcesConfig.SUMMARIES)
 
     /**
-     * Worth summarizing? A conversation/burst (more than one message) OR a single
-     * long message. Short single messages don't benefit.
+     * Worth summarizing? Anything long enough to benefit: a conversation/burst
+     * (more than one message) or any notification with a long body, regardless
+     * of which app posted it. Short content is skipped - the summary would be
+     * longer than the original.
      */
-    fun shouldSummarize(text: String, isMessage: Boolean, messageCount: Int): Boolean =
-        isMessage && (messageCount > 1 || text.length >= MIN_LEN)
+    fun shouldSummarize(text: String, messageCount: Int): Boolean =
+        messageCount > 1 || text.length >= MIN_LEN
 
     /**
-     * Summarize off-thread and post the result. [isConversation] picks a
-     * conversation-vs-single-message prompt. [onReplace], if provided, runs after
-     * a successful summary so the listener can cancel the original.
+     * Summarize off-thread and post the result. [isConversation]/[isMessage]
+     * pick the prompt (conversation vs chat message vs generic notification).
+     * [onReplace], if provided, runs after a successful summary so the listener
+     * can cancel the original.
      */
     fun summarize(
         context: Context,
@@ -52,6 +55,7 @@ object NotificationSummarizer {
         title: String,
         text: String,
         isConversation: Boolean,
+        isMessage: Boolean,
         originalKey: String,
         onReplace: (() -> Unit)?
     ) {
@@ -76,10 +80,16 @@ object NotificationSummarizer {
                         "decisions or plans. Do NOT copy messages verbatim - write a new condensed " +
                         "overview of the WHOLE conversation. Output only the summary, no preamble."
                     prompt = "Conversation in ${title.ifBlank { app }}:\n$text\n\nSummary of the whole conversation:"
+                } else if (isMessage) {
+                    system = "You summarize a chat message in one short, clear sentence. Do NOT " +
+                        "copy the text verbatim - condense it in your own words, keeping any " +
+                        "action or deadline. Output only the summary, no preamble."
+                    prompt = "Message from ${title.ifBlank { app }}:\n\"$text\"\n\nOne-sentence summary:"
                 } else {
-                    system = "You summarize a chat message in one short, clear sentence. " +
-                        "Output only the summary, no preamble."
-                    prompt = "Message from ${title.ifBlank { app }}:\n\"$text\""
+                    system = "You summarize an app notification in one short, clear sentence. Do " +
+                        "NOT copy the text verbatim - condense it in your own words, keeping any " +
+                        "action the user must take. Output only the summary, no preamble."
+                    prompt = "Notification from ${app.ifBlank { title }}${if (title.isNotBlank() && app.isNotBlank()) " (\"$title\")" else ""}:\n\"$text\"\n\nOne-sentence summary:"
                 }
                 val result = engine.infer(
                     JSONObject()
