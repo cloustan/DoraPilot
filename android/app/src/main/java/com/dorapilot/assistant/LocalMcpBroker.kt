@@ -124,6 +124,43 @@ class LocalMcpBroker(
             )
             put(
                 JSONObject()
+                    .put("name", "intent_routing_server.start_intent")
+                    .put(
+                        "description",
+                        "Launch ANY Android app via a standard intent. Use this for cross-app " +
+                            "actions: maps, dialer, SMS, email, share, alarms, timers, camera, " +
+                            "calendar, browser, store, etc. Fields: action (e.g. VIEW, DIAL, SENDTO, " +
+                            "SEND, SET_ALARM, SET_TIMER, IMAGE_CAPTURE, or a full action string), " +
+                            "data (a uri like tel:123, geo:0,0?q=cafe, sms:123, mailto:a@b.com, " +
+                            "https://..., market://details?id=pkg), mimeType, package (optional, to " +
+                            "target one app), extras (object). Examples: " +
+                            "call -> {action:'DIAL',data:'tel:5551234'}; " +
+                            "navigate -> {action:'VIEW',data:'geo:0,0?q=coffee near me'}; " +
+                            "text someone -> {action:'SENDTO',data:'smsto:5551234',extras:{text:'hi'}}; " +
+                            "email -> {action:'SENDTO',data:'mailto:a@b.com',extras:{subject:'Hi',text:'...'}}; " +
+                            "share text -> {action:'SEND',mimeType:'text/plain',extras:{text:'...'}}; " +
+                            "alarm 7:30 -> {action:'SET_ALARM',extras:{hour:7,minutes:30,message:'Wake up'}}; " +
+                            "timer 5 min -> {action:'SET_TIMER',extras:{length:300,message:'Tea',skip_ui:true}}; " +
+                            "open website -> {action:'VIEW',data:'https://example.com'}; " +
+                            "play on spotify -> {action:'VIEW',data:'https://open.spotify.com/search/lofi',package:'com.spotify.music'}."
+                    )
+                    .put(
+                        "input_schema",
+                        JSONObject()
+                            .put("type", "object")
+                            .put(
+                                "properties",
+                                JSONObject()
+                                    .put("action", JSONObject().put("type", "string"))
+                                    .put("data", JSONObject().put("type", "string"))
+                                    .put("mimeType", JSONObject().put("type", "string"))
+                                    .put("package", JSONObject().put("type", "string"))
+                                    .put("extras", JSONObject().put("type", "object"))
+                            )
+                    )
+            )
+            put(
+                JSONObject()
                     .put("name", "intent_routing_server.open_app")
                     .put("description", "Open an installed app by package name.")
                     .put(
@@ -539,6 +576,9 @@ class LocalMcpBroker(
                     uri = args.optString("uri", "").trim(),
                     packageName = args.optString("package", "").trim()
                 )
+            }
+            "intent_routing_server.start_intent" -> {
+                intentRouter.startIntent(args)
             }
             "intent_routing_server.open_app" -> {
                 val pkg = args.optString(

@@ -723,7 +723,8 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
                 model = backendConfig.model.trim(),
                 messages = messages,
                 tools = tools,
-                headers = backendConfig.headers
+                headers = backendConfig.headers,
+                temperature = 0.0
             ),
             maxRetries = maxRetries
         )
@@ -783,18 +784,27 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
         return if (parts.size >= 2) parts else listOf(goal)
     }
 
-    /** Action-oriented subset of the MCP catalog exposed to the agent model. */
+    /**
+     * Lean, action-oriented subset of the MCP catalog exposed to the agent model.
+     * Cross-app actions go through the single generic `start_intent` tool (the
+     * uniform Android intent format) instead of one bespoke tool per app feature,
+     * which keeps the model's context small while covering nearly every app.
+     */
     private fun agentToolCatalog(): JSONArray {
         val all = localMcpBroker.listTools()
         val allowPrefixes = listOf(
-            "device_control.", "app_actions.", "personal_context.", "text_intelligence."
+            "device_control.", "personal_context.", "text_intelligence."
         )
         val allowExact = setOf(
+            "intent_routing_server.start_intent",
             "intent_routing_server.open_app",
             "intent_routing_server.launch_system_action",
-            "intent_routing_server.open_maps_query",
-            "intent_routing_server.search_web",
             "device_web_search.search",
+            // Specific tools only where the generic intent is unreliable (natural
+            // language time/duration parsing) or non-trivial (media search).
+            "app_actions.set_alarm",
+            "app_actions.set_timer",
+            "app_actions.play_media",
             "context_triage_screen.get_active_screen_json"
         )
         val out = JSONArray()
