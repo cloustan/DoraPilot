@@ -30,7 +30,11 @@ class DoraNotificationListener : NotificationListenerService() {
 
         val extras = notification.extras ?: return
         val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty().trim()
-        val text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty().trim()
+        val shortText = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString().orEmpty().trim()
+        // Email/chat apps often put the subject in EXTRA_TEXT and the real body
+        // in EXTRA_BIG_TEXT (e.g. Gmail) - use whichever carries more content.
+        val bigText = extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString().orEmpty().trim()
+        val text = if (bigText.length > shortText.length) bigText else shortText
         if (title.isEmpty() && text.isEmpty()) return
 
         val category = notification.category ?: ""
