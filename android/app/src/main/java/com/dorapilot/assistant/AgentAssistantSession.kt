@@ -339,9 +339,10 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
                         } else {
                             val prompt = payload.optString("prompt", "").trim()
                             appendConversationHistory("user", prompt)
-                            // Multi-step / compound requests: chain the parts.
+                            // Multi-step / compound requests run the model-driven
+                            // MCP tool-calling agent loop.
                             if (looksMultiStep(prompt)) {
-                                runMultiStep(prompt)
+                                runAgentTaskLoop(JSONObject().put("goal", prompt))
                                 return@execute
                             }
                             val deviceResult = deviceCommandRouter.tryHandle(prompt)
@@ -626,18 +627,10 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
     private fun runAgentTaskLoop(payload: JSONObject) {
         val goal = payload.optString("goal", payload.optString("prompt", "")).trim()
         val apiKey = backendConfig.apiKey.trim()
-        val endpoint = backendConfig.endpoint.trim()
-        val model = backendConfig.model.trim()
-        val headers = backendConfig.headers
-        val maxTurns = payload.optInt("max_turns", 6).coerceIn(1, 12)
         val maxRetries = payload.optInt("max_retries", 2).coerceIn(0, 4)
 
         if (goal.isEmpty()) {
             emitTerminalStream("error", "agent.run_task requires goal")
-            return
-        }
-        if (apiKey.isEmpty()) {
-            emitTerminalStream("error", "agent.run_task requires api_key")
             return
         }
 
@@ -646,8 +639,7 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
             return
         }
 
-        // Single explicit command -> instant native path. Skip for compound/
-        // multi-step goals so the loop can chain the parts.
+        // Trivial single command -> instant native path (sub-second, no cloud).
         if (!looksMultiStep(goal)) {
             deviceCommandRouter.tryHandle(goal)?.let { deviceResult ->
                 emitAgentFinal(deviceResult.optString("output", "Done."))
@@ -656,157 +648,175 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
         }
 
         setOverlayWorking()
-        val toolsCatalog = filterToolsForGoal(localMcpBroker.listTools(), goal)
-        val toolNames = buildToolNameSet(toolsCatalog)
-        val toolsSummary = buildToolsSummary(toolsCatalog)
-        val history = mutableListOf<String>()
-        val toolFailureCounts = mutableMapOf<String, Int>()
-        var missingToolStreak = 0
-        var finalAnswer = ""
 
-        emitTerminalStream("agent", "Starting run loop for goal: $goal")
-        for (turn in 1..maxTurns) {
-            emitTerminalStream("agent", "Turn $turn/$maxTurns: requesting model plan")
-            val turnPrompt = buildTurnPrompt(
-                goal = goal,
-                toolsSummary = toolsSummary,
-                history = history
-            )
-            val messages = JSONArray()
-                .put(
-                    JSONObject()
-                        .put("role", "system")
-                        .put(
-                            "content",
-                            "You are Dora's device agent that can control this phone " +
-                                "(flashlight, media playback, volume, opening apps, system settings) " +
-                                "by calling the provided tools. Reply ONLY valid JSON. " +
-                                "Schema: {\"action\":\"tool\",\"tool\":\"<name>\",\"args\":{...}} " +
-                                "OR {\"action\":\"final\",\"answer\":\"...\"}."
-                        )
-                )
-                .put(JSONObject().put("role", "user").put("content", turnPrompt))
-            val completion = requestCompletionWithRetry(
-                request = MainBackendClient.CompletionRequest(
-                    endpoint = endpoint,
-                    apiKey = apiKey,
-                    model = model,
-                    messages = messages,
-                    headers = headers
-                ),
-                maxRetries = maxRetries
-            )
-
-            if (!completion.ok) {
-                emitTerminalStream("error", "Model request failed: ${completion.error}")
-                break
-            }
-
-            val rawOutput = completion.outputText
-                .ifBlank { completion.message.optString("content", "") }
-                .trim()
-            if (rawOutput.isEmpty()) {
-                history += "Turn $turn: empty model output."
-                continue
-            }
-
-            val decision = parseAgentDecision(rawOutput)
-            if (decision == null) {
-                emitTerminalStream("agent", "Unparsed model output, asking again.")
-                history += "Turn $turn unparsable output: ${rawOutput.take(300)}"
-                if (turn == maxTurns && finalAnswer.isBlank()) {
-                    finalAnswer = rawOutput.take(400)
-                }
-                continue
-            }
-
-            val action = decision.optString("action", "").lowercase()
-            val thinking = decision.optString("thinking", "").trim()
-            if (thinking.isNotEmpty()) {
-                emitTerminalStream("agent", "Thinking: $thinking")
-            }
-            val rationale = decision.optString("rationale", decision.optString("why", "")).trim()
-            if (rationale.isNotEmpty()) {
-                emitTerminalStream("agent", "Rationale: $rationale")
-            }
-            val needScreenContext = decision.optBoolean("need_screen_context", false)
-            if (needScreenContext && "context_triage_screen.get_active_screen_json" in toolNames) {
-                emitTerminalStream("agent", "Model requested fresh screen context.")
-                val contextResult = callToolWithRetry(
-                    "context_triage_screen.get_active_screen_json",
-                    JSONObject(),
-                    maxRetries
-                )
-                emitTerminalStream("mcp", "tool=context_triage_screen.get_active_screen_json result=$contextResult")
-                history += "Model requested fresh screen context: $contextResult"
-                continue
-            }
-            if (action == "final" || action == "done" || action == "answer") {
-                finalAnswer = decision.optString("answer", rawOutput).trim()
-                emitTerminalStream("agent", "Final answer: $finalAnswer")
-                break
-            }
-
-            val requestedTool = decision.optString("tool", "").trim()
-            var toolName = normalizeToolName(requestedTool, toolNames)
-            var rawToolArgs = decision.optJSONObject("args") ?: JSONObject()
-            if (toolName.isEmpty()) {
-                missingToolStreak += 1
-                val fallback = chooseFallbackTool(
-                    goal = goal,
-                    thinking = thinking,
-                    rationale = rationale,
-                    availableTools = toolNames
-                )
-                if (fallback != null) {
-                    toolName = fallback.first
-                    rawToolArgs = fallback.second
-                    emitTerminalStream("agent", "Recovered tool choice via fallback: $toolName")
-                    history += "Recovered missing tool -> $toolName from reasoning text."
-                } else {
-                    history += "Turn $turn missing tool name in decision: ${decision.toString().take(250)}"
-                    emitTerminalStream("agent", "Decision missing tool name, retrying.")
-                    if (missingToolStreak >= 3) {
-                        finalAnswer = "I can reason about this goal, but I am not receiving a valid tool choice from the model response. Try a more specific command, such as 'search web weather in Singapore' or 'read active screen context'."
-                        emitTerminalStream("agent", "Final answer: $finalAnswer")
-                        break
-                    }
-                    continue
-                }
-            } else {
-                missingToolStreak = 0
-            }
-            if (toolName !in toolNames) {
-                history += "Turn $turn requested disallowed tool '$toolName'. Allowed: ${toolNames.joinToString(",")}"
-                emitTerminalStream("agent", "Ignoring disallowed tool '$toolName', replanning.")
-                continue
-            }
-
-            if ((toolFailureCounts[toolName] ?: 0) >= 2) {
-                history += "Tool $toolName skipped due to repeated failures. Choose different tool."
-                emitTerminalStream("agent", "Skipping repeatedly failing tool: $toolName")
-                continue
-            }
-
-            val toolArgs = normalizeToolArgs(toolName, rawToolArgs, goal)
-            val validationIssue = validateToolChoice(toolName, toolArgs, goal, toolFailureCounts)
-            if (validationIssue != null) {
-                emitTerminalStream("agent", "Replan needed: $validationIssue")
-                history += "Rejected tool selection: $toolName args=$toolArgs reason=$validationIssue"
-                continue
-            }
-            emitTerminalStream("agent", "Executing tool: $toolName")
-            val toolResult = callToolWithRetry(toolName, toolArgs, maxRetries)
-            emitTerminalStream("mcp", "tool=$toolName result=$toolResult")
-            if (!toolResult.optBoolean("ok", false)) {
-                toolFailureCounts[toolName] = (toolFailureCounts[toolName] ?: 0) + 1
-            } else {
-                toolFailureCounts[toolName] = 0
-            }
-            history += "Tool=$toolName args=$toolArgs result=$toolResult"
+        if (apiKey.isEmpty()) {
+            // No cloud model configured -> best-effort deterministic chaining.
+            runDeterministicChain(goal)
+            return
         }
 
-        emitAgentFinal(finalAnswer)
+        // Model-driven MCP tool calling. Workers AI Llama is reliable for a
+        // single action per turn but stalls on compound "do A and B" requests,
+        // so we decompose into atomic steps and let the model natively choose
+        // the tool + args for each step via function calling.
+        val toolsCatalog = agentToolCatalog()
+        val tools = toOpenAiTools(toolsCatalog)
+        val toolNames = buildToolNameSet(toolsCatalog)
+        val steps = decomposeSteps(goal)
+        emitTerminalStream("agent", "Agent goal: $goal -> ${steps.size} step(s)")
+
+        val outputs = mutableListOf<String>()
+        var modelFailure = false
+        for ((index, step) in steps.withIndex()) {
+            emitTerminalStream("agent", "Step ${index + 1}/${steps.size}: $step")
+            val stepResult = runAgentStep(step, tools, toolNames, maxRetries)
+            if (stepResult == null) {
+                modelFailure = true
+                deviceCommandRouter.tryHandle(step)?.let {
+                    outputs += it.optString("output", "Done.").trim()
+                }
+            } else if (stepResult.isNotBlank()) {
+                outputs += stepResult.trim()
+            }
+            runCatching { Thread.sleep(200) }
+        }
+
+        val answer = outputs.filter { it.isNotEmpty() }.joinToString(" ")
+        when {
+            answer.isNotBlank() -> emitAgentFinal(answer)
+            modelFailure -> runDeterministicChain(goal)
+            else -> emitAgentFinal("")
+        }
+    }
+
+    /**
+     * Run one atomic step through native model tool calling: the model picks a
+     * tool + args, we execute it via the MCP broker and report the outcome. If
+     * the model answers without a tool (e.g. an info question) we return that
+     * text. Returns null only when the model request itself fails.
+     */
+    private fun runAgentStep(
+        step: String,
+        tools: JSONArray,
+        toolNames: Set<String>,
+        maxRetries: Int
+    ): String? {
+        val messages = JSONArray()
+            .put(
+                JSONObject()
+                    .put("role", "system")
+                    .put(
+                        "content",
+                        "You are Dora's phone-control agent. Call exactly ONE tool to do what " +
+                            "the user asks. For questions needing live or factual info, call " +
+                            "device_web_search.search. Use personal-data tools only when the user " +
+                            "asks about their own notifications, messages, or saved facts. Never ask " +
+                            "for permission. If no tool fits, answer in one short sentence."
+                    )
+            )
+            .put(JSONObject().put("role", "user").put("content", step))
+
+        val completion = requestCompletionWithRetry(
+            request = MainBackendClient.CompletionRequest(
+                endpoint = backendConfig.endpoint.trim(),
+                apiKey = backendConfig.apiKey.trim(),
+                model = backendConfig.model.trim(),
+                messages = messages,
+                tools = tools,
+                headers = backendConfig.headers
+            ),
+            maxRetries = maxRetries
+        )
+        if (!completion.ok) {
+            emitTerminalStream("error", "Model request failed: ${completion.error}")
+            return null
+        }
+
+        val toolCalls = completion.toolCalls
+        val content = completion.outputText
+            .ifBlank { completion.message.optString("content", "") }
+            .trim()
+
+        if (toolCalls.length() == 0) {
+            if (content.isNotEmpty()) return content
+            // Empty model output -> let the instant router try the step.
+            return deviceCommandRouter.tryHandle(step)?.optString("output")
+        }
+
+        val results = mutableListOf<String>()
+        for (i in 0 until toolCalls.length()) {
+            val fn = toolCalls.optJSONObject(i)?.optJSONObject("function") ?: continue
+            val rawName = fn.optString("name", "").trim()
+            val toolName = normalizeToolName(rawName, toolNames)
+            if (toolName.isEmpty() || toolName !in toolNames) {
+                emitTerminalStream("agent", "Model picked unknown tool '$rawName', skipping.")
+                continue
+            }
+            val rawArgs = runCatching { JSONObject(fn.optString("arguments", "{}")) }
+                .getOrDefault(JSONObject())
+            val toolArgs = normalizeToolArgs(toolName, rawArgs, step)
+            emitTerminalStream("agent", "Calling tool: $toolName $toolArgs")
+            val toolResult = callToolWithRetry(toolName, toolArgs, maxRetries)
+            emitTerminalStream("mcp", "tool=$toolName result=$toolResult")
+            val out = toolOutputText(toolResult)
+            if (out.isNotEmpty()) results += out
+        }
+        if (results.isEmpty()) {
+            return deviceCommandRouter.tryHandle(step)?.optString("output")
+        }
+        return results.joinToString(" ")
+    }
+
+    /** Pull the most human-readable text out of an MCP tool result. */
+    private fun toolOutputText(result: JSONObject): String {
+        val text = listOf("output", "spoken", "answer", "message", "result", "summary")
+            .firstNotNullOfOrNull { key -> result.optString(key, "").trim().ifBlank { null } }
+        return text ?: if (result.optBoolean("ok", false)) "Done." else "That didn't work."
+    }
+
+    /** Split a compound goal into atomic steps; returns [goal] when not compound. */
+    private fun decomposeSteps(goal: String): List<String> {
+        val parts = goal
+            .split(Regex("(?i)\\s+(?:and then|after that|then|and|&)\\s+"))
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+        return if (parts.size >= 2) parts else listOf(goal)
+    }
+
+    /** Action-oriented subset of the MCP catalog exposed to the agent model. */
+    private fun agentToolCatalog(): JSONArray {
+        val all = localMcpBroker.listTools()
+        val allowPrefixes = listOf(
+            "device_control.", "app_actions.", "personal_context.", "text_intelligence."
+        )
+        val allowExact = setOf(
+            "intent_routing_server.open_app",
+            "intent_routing_server.launch_system_action",
+            "intent_routing_server.open_maps_query",
+            "intent_routing_server.search_web",
+            "device_web_search.search",
+            "context_triage_screen.get_active_screen_json"
+        )
+        val out = JSONArray()
+        for (i in 0 until all.length()) {
+            val tool = all.optJSONObject(i) ?: continue
+            val name = tool.optString("name", "")
+            if (allowPrefixes.any { name.startsWith(it) } || name in allowExact) {
+                out.put(tool)
+            }
+        }
+        return out
+    }
+
+    /** Fallback chaining via the instant router when the cloud model is down. */
+    private fun runDeterministicChain(goal: String) {
+        val outputs = mutableListOf<String>()
+        for (part in decomposeSteps(goal)) {
+            val res = deviceCommandRouter.tryHandle(part) ?: continue
+            outputs += res.optString("output", "Done.").trim()
+            runCatching { Thread.sleep(200) }
+        }
+        emitAgentFinal(outputs.filter { it.isNotEmpty() }.joinToString(" "))
     }
 
     /** Emit the agent's final answer through the normal render path (overlay + app). */
@@ -838,37 +848,6 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
     private fun looksMultiStep(prompt: String): Boolean {
         val t = prompt.lowercase()
         return actionVerbs.count { t.contains(it) } >= 2
-    }
-
-    /**
-     * Chain a compound request ("turn on the flashlight and set volume to 30").
-     * Each part is split on conjunctions and run through the reliable instant
-     * router; if every part is handled we report a combined result. If a part is
-     * not a known command, we fall back to the LLM agentic loop for the whole goal.
-     */
-    private fun runMultiStep(prompt: String) {
-        setOverlayWorking()
-        val parts = prompt
-            .split(Regex("(?i)\\s+(?:and then|after that|then|and|&)\\s+"))
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-        if (parts.size < 2) {
-            runAgentTaskLoop(JSONObject().put("goal", prompt))
-            return
-        }
-        val outputs = mutableListOf<String>()
-        for (part in parts) {
-            val res = deviceCommandRouter.tryHandle(part)
-            if (res != null) {
-                outputs += res.optString("output", "Done.").trim()
-                runCatching { Thread.sleep(250) } // let each action settle
-            } else {
-                // Unknown step -> hand the whole goal to the LLM agent loop.
-                runAgentTaskLoop(JSONObject().put("goal", prompt))
-                return
-            }
-        }
-        emitAgentFinal(outputs.filter { it.isNotEmpty() }.joinToString(" "))
     }
 
     private fun requestCompletionWithRetry(

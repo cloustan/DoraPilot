@@ -42,19 +42,22 @@ export default {
 
         const model = normalizeModel(body.model);
         const temperature = clampNumber(body.temperature, 0, 2, 0.2);
+        const tools = normalizeTools(body.tools);
+
+        const runOpts = { messages, temperature, max_tokens: 512 };
+        if (tools.length > 0) runOpts.tools = tools;
 
         let result;
         try {
-            result = await env.AI.run(model, {
-                messages,
-                temperature,
-                max_tokens: 512
-            });
+            result = await env.AI.run(model, runOpts);
         } catch (error) {
             return json({ error: `Inference failed: ${error.message || "unknown"}` }, 502);
         }
 
         // OpenAI-compatible response shape for the app's MainBackendClient parser.
+        const toolCalls = normalizeToolCalls(result?.tool_calls);
+        const message = { role: "assistant", content: result?.response ?? "" };
+        if (toolCalls.length > 0) message.tool_calls = toolCalls;
         return json({
             id: `clou-${crypto.randomUUID()}`,
             object: "chat.completion",
@@ -63,8 +66,8 @@ export default {
             choices: [
                 {
                     index: 0,
-                    message: { role: "assistant", content: result?.response ?? "" },
-                    finish_reason: "stop"
+                    message,
+                    finish_reason: toolCalls.length > 0 ? "tool_calls" : "stop"
                 }
             ]
         });
@@ -319,6 +322,48 @@ function sanitizeMessages(raw) {
         cleaned.push({ role, content: content.slice(0, MAX_CONTENT_CHARS) });
     }
     return cleaned;
+}
+
+// Accept OpenAI-style ({type:"function",function:{...}}) or flat tool specs and
+// emit the Workers AI shape: { name, description, parameters }.
+function normalizeTools(raw) {
+    if (!Array.isArray(raw)) return [];
+    const out = [];
+    for (const t of raw.slice(0, 48)) {
+        if (!t || typeof t !== "object") continue;
+        const fn = t.function && typeof t.function === "object" ? t.function : t;
+        const name = `${fn.name || ""}`.trim();
+        if (!name) continue;
+        out.push({
+            name,
+            description: `${fn.description || ""}`.slice(0, 320),
+            parameters: fn.parameters || fn.input_schema || { type: "object", properties: {} }
+        });
+    }
+    return out;
+}
+
+// Normalize Workers AI tool_calls ([{name, arguments}]) into OpenAI tool_calls
+// ([{id,type,function:{name,arguments:<string>}}]) for the app parser.
+function normalizeToolCalls(raw) {
+    if (!Array.isArray(raw)) return [];
+    const out = [];
+    for (const c of raw) {
+        if (!c || typeof c !== "object") continue;
+        const fn = c.function && typeof c.function === "object" ? c.function : c;
+        const name = `${fn.name || ""}`.trim();
+        if (!name) continue;
+        let args = fn.arguments ?? c.arguments ?? {};
+        if (typeof args !== "string") {
+            try { args = JSON.stringify(args); } catch { args = "{}"; }
+        }
+        out.push({
+            id: `call_${crypto.randomUUID().slice(0, 8)}`,
+            type: "function",
+            function: { name, arguments: args }
+        });
+    }
+    return out;
 }
 
 function normalizeModel(raw) {
