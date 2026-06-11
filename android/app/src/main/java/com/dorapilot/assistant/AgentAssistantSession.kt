@@ -857,7 +857,7 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
         "open ", "launch ", "play ", "turn on", "turn off", "set ", "send ", "text ",
         "call ", "navigate", "directions", "find ", "mute", "unmute", "pause", "skip",
         "resume", "stop ", "create ", "schedule ", "take a photo", "take a picture",
-        "record a video", "message ", "dial "
+        "record a video", "message ", "dial ", "fetch ", "download "
     )
 
     /** Heuristic: does the request contain 2+ distinct actions (needs chaining)? */
