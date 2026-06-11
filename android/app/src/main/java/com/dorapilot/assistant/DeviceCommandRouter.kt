@@ -1,5 +1,6 @@
 package com.dorapilot.assistant
 
+import android.net.Uri
 import org.json.JSONObject
 
 /**
@@ -32,6 +33,12 @@ class DeviceCommandRouter(
         // unless they also carry a clear imperative cue ("can you turn on ...").
         val firstWord = text.substringBefore(' ')
         val isQuestion = firstWord in QUESTION_STARTS
+        val hasActionCue = ACTION_CUES.any { text.contains(it) }
+        // Plain informational questions ("how does bluetooth work") must NOT be
+        // hijacked by device matchers or on-device web search - let the cloud
+        // assistant answer them. Only intercept when there is a clear command cue.
+        if (isQuestion && !hasActionCue) return null
+
         timelineAction(prompt, text)?.let { return it }
         screenAction(prompt, text)?.let { return it }
 
@@ -44,10 +51,48 @@ class DeviceCommandRouter(
         systemSearchAction(prompt, text)?.let { return it }
         openApp(prompt, text)?.let { return it }
         textIntelligence?.parseAndRun(prompt)?.let { return it }
-        if (isQuestion || isInformationQuery(text)) {
-            webSearch?.search(prompt)?.let { return it.put("device_action", false) }
+        if (isInformationQuery(text)) {
+            runWebSearch(prompt)?.let { return it }
         }
         return null
+    }
+
+    /**
+     * Explicit web-search commands ("search the web for X", "look up X"). Tries
+     * the on-device instant providers; when they are blocked/unreachable on the
+     * current network (no results), it OPENS the browser with the query instead
+     * of dead-ending with a "providers unavailable" message.
+     */
+    private fun runWebSearch(prompt: String): JSONObject? {
+        val ws = webSearch ?: return null
+        val cleaned = stripSearchPrefix(prompt)
+        if (cleaned.isBlank()) return null
+        val res = runCatching { ws.search(cleaned) }.getOrNull()
+        val resultCount = res?.optJSONArray("results")?.length() ?: 0
+        if (res != null && resultCount > 0) {
+            return res.put("device_action", false)
+        }
+        val url = res?.optString("url").orEmpty()
+            .ifBlank { "https://duckduckgo.com/?q=" + Uri.encode(cleaned) }
+        val launch = intentRouter.fireAppDeepLink(url, "")
+        return JSONObject()
+            .put("ok", launch.optBoolean("ok", true))
+            .put("device_action", true)
+            .put("output", "Searching the web for \u201C$cleaned\u201D in your browser.")
+            .put("detail", launch)
+    }
+
+    private fun stripSearchPrefix(prompt: String): String {
+        var q = prompt.trim()
+        val lower = q.lowercase()
+        val prefixes = listOf(
+            "search the web for ", "web search for ", "web search ", "search for ",
+            "look up ", "google ", "search "
+        )
+        for (p in prefixes) {
+            if (lower.startsWith(p)) { q = q.substring(p.length).trim(); break }
+        }
+        return q.trim('"', '\'', '.', ',', ':', '?')
     }
 
     private fun timelineAction(originalPrompt: String, text: String): JSONObject? {
