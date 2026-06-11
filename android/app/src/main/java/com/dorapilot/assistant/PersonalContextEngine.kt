@@ -61,14 +61,23 @@ class PersonalContextEngine(
         if (!config.isEnabled(ContextSourcesConfig.NOTIFICATIONS) || !hasNotificationAccess()) {
             return JSONArray()
         }
-        return NotificationStore.recent(8, messagesOnly = false)
+        // recent() with messagesOnly=false includes messages too; keep only true notifications.
+        val out = JSONArray()
+        PersonalContextStore.recent(context, 16, messagesOnly = false)
+            .filter { !it.optBoolean("is_message", false) }
+            .take(8)
+            .forEach { out.put(it.put("when", relativeTime(it.optLong("time", 0L)))) }
+        return out
     }
 
     private fun recentMessages(): JSONArray {
         if (!config.isEnabled(ContextSourcesConfig.MESSAGES) || !hasNotificationAccess()) {
             return JSONArray()
         }
-        return NotificationStore.recent(8, messagesOnly = true)
+        val out = JSONArray()
+        PersonalContextStore.recent(context, 8, messagesOnly = true)
+            .forEach { out.put(it.put("when", relativeTime(it.optLong("time", 0L)))) }
+        return out
     }
 
     private fun upcomingCalendar(): JSONArray {
@@ -277,6 +286,111 @@ class PersonalContextEngine(
         NotificationManagerCompat.getEnabledListenerPackages(context).contains(context.packageName)
     }.getOrDefault(false)
 
+    // ---- Cross-source personal search (on-device RAG retrieval) -------------
+
+    /**
+     * Builds a unified, searchable corpus from every enabled+granted source so a
+     * single question can be answered from data spread across messages,
+     * notifications and calendar (e.g. "when does my friend's flight land and
+     * what restaurant did they suggest?"). Lexical scoring keeps it fully
+     * on-device with no model; can be upgraded to embeddings later.
+     */
+    fun searchPersonalData(query: String, limit: Int = 8): JSONObject {
+        val terms = tokenize(query)
+        if (terms.isEmpty()) {
+            return JSONObject().put("ok", true).put("query", query).put("count", 0).put("results", JSONArray())
+        }
+        val corpus = searchCorpus(terms)
+        val scored = corpus.mapNotNull { item ->
+            val title = item.optString("title")
+            val text = item.optString("text")
+            val app = item.optString("app")
+            val titleLc = title.lowercase()
+            val hay = "$title $text $app".lowercase()
+            var score = 0.0
+            for (t in terms) {
+                if (hay.contains(t)) score += if (titleLc.contains(t)) 2.0 else 1.0
+            }
+            if (score <= 0.0) return@mapNotNull null
+            // Mild recency boost so newer items win ties.
+            val ageDays = ((System.currentTimeMillis() - item.optLong("time", 0L)) / 86_400_000.0).coerceAtLeast(0.0)
+            item to (score + (1.0 / (1.0 + ageDays)) * 0.5)
+        }.sortedByDescending { it.second }.take(limit.coerceIn(1, 20))
+
+        val results = JSONArray()
+        scored.forEach { (item, score) ->
+            results.put(JSONObject(item.toString()).put("score", String.format("%.2f", score).toDouble()))
+        }
+        return JSONObject().put("ok", true).put("query", query).put("count", results.length()).put("results", results)
+    }
+
+    /** Build search candidates from the encrypted store (full history) + live calendar. */
+    private fun searchCorpus(terms: List<String>): List<JSONObject> {
+        val items = mutableListOf<JSONObject>()
+        val notifAccess = hasNotificationAccess()
+        val msgsOn = config.isEnabled(ContextSourcesConfig.MESSAGES)
+        val notifsOn = config.isEnabled(ContextSourcesConfig.NOTIFICATIONS)
+        if (notifAccess && (msgsOn || notifsOn)) {
+            PersonalContextStore.searchCandidates(context, terms, 200).forEach { row ->
+                val isMsg = row.optBoolean("is_message", false)
+                if ((isMsg && msgsOn) || (!isMsg && notifsOn)) {
+                    items += row.put("when", relativeTime(row.optLong("time", 0L)))
+                }
+            }
+        }
+        if (config.isEnabled(ContextSourcesConfig.CALENDAR)) {
+            val events = calendarReader.upcoming(limit = 25, windowHours = 24 * 14)
+            for (i in 0 until events.length()) {
+                val e = events.optJSONObject(i) ?: continue
+                items += JSONObject()
+                    .put("source", "calendar")
+                    .put("app", "Calendar")
+                    .put("title", e.optString("title"))
+                    .put("text", e.optString("location"))
+                    .put("when", e.optString("when"))
+                    .put("time", e.optLong("begin_ms", 0L))
+            }
+        }
+        return items
+    }
+
+    /** Ambient context + query-relevant retrieved snippets, for the system prompt. */
+    fun contextForPrompt(query: String): String {
+        val ambient = summaryForPrompt()
+        val search = searchPersonalData(query, 6)
+        val results = search.optJSONArray("results") ?: JSONArray()
+        if (results.length() == 0) return ambient
+        val sb = StringBuilder("Personal data relevant to the question (retrieved on-device):")
+        for (i in 0 until results.length()) {
+            val r = results.optJSONObject(i) ?: continue
+            val src = r.optString("source")
+            val app = r.optString("app")
+            val title = r.optString("title")
+            val text = r.optString("text").take(160)
+            val whenText = r.optString("when")
+            val head = listOf(title, text).filter { it.isNotBlank() }.joinToString(": ")
+            sb.append("\n  - [$src · $app] $head").apply { if (whenText.isNotBlank()) append(" ($whenText)") }
+        }
+        return "$ambient\n\n$sb"
+    }
+
+    private fun tokenize(query: String): List<String> =
+        query.lowercase()
+            .split(Regex("[^a-z0-9]+"))
+            .filter { it.length >= 3 && it !in STOPWORDS }
+            .distinct()
+
+    private fun relativeTime(ms: Long): String {
+        if (ms <= 0) return ""
+        val diff = System.currentTimeMillis() - ms
+        return when {
+            diff < 60_000 -> "just now"
+            diff < 3_600_000 -> "${diff / 60_000}m ago"
+            diff < 86_400_000 -> "${diff / 3_600_000}h ago"
+            else -> "${diff / 86_400_000}d ago"
+        }
+    }
+
     // ---- Source management (used by the settings UI / MCP) -----------------
 
     /** Per-source enabled + permission-granted status for the settings panel. */
@@ -298,12 +412,12 @@ class PersonalContextEngine(
             return JSONObject().put("ok", false).put("error", "Unknown source: $key")
         }
         config.setEnabled(key, enabled)
-        // When all notification-backed sources are off, drop the in-memory buffer.
+        // When all notification-backed sources are off, purge the stored corpus.
         if (!enabled &&
             !config.isEnabled(ContextSourcesConfig.NOTIFICATIONS) &&
             !config.isEnabled(ContextSourcesConfig.MESSAGES)
         ) {
-            NotificationStore.clear()
+            PersonalContextStore.clearCorpus(context)
         }
         return JSONObject().put("ok", true).put("source", key).put("enabled", enabled)
             .put("granted", isSourceGranted(key))
@@ -327,33 +441,38 @@ class PersonalContextEngine(
     fun remember(key: String, value: String): JSONObject {
         val k = key.trim()
         if (k.isEmpty()) return JSONObject().put("ok", false).put("error", "key is required")
-        val memory = memoryObject()
-        val facts = memory.optJSONObject("facts") ?: JSONObject()
-        facts.put(k, value.trim())
-        memory.put("facts", facts).put("updated_at_ms", System.currentTimeMillis())
-        return persistMemory(memory).put("ok", true).put("remembered", k)
+        PersonalContextStore.memorySet(context, k, value.trim())
+        return JSONObject().put("ok", true).put("remembered", k)
     }
 
     fun forget(key: String): JSONObject {
         val k = key.trim()
-        val memory = memoryObject()
-        val facts = memory.optJSONObject("facts") ?: JSONObject()
-        facts.remove(k)
-        memory.put("facts", facts).put("updated_at_ms", System.currentTimeMillis())
-        return persistMemory(memory).put("ok", true).put("forgot", k)
+        PersonalContextStore.memoryDelete(context, k)
+        return JSONObject().put("ok", true).put("forgot", k)
     }
 
     fun memoryObject(): JSONObject {
-        if (!memoryFile.exists()) return JSONObject().put("facts", JSONObject())
-        return runCatching { JSONObject(memoryFile.readText()) }
-            .getOrDefault(JSONObject().put("facts", JSONObject()))
+        migrateLegacyMemoryIfNeeded()
+        return JSONObject().put("facts", PersonalContextStore.memoryAll(context))
     }
 
-    private fun persistMemory(memory: JSONObject): JSONObject {
+    private fun migrateLegacyMemoryIfNeeded() {
+        if (!memoryFile.exists()) return
         runCatching {
-            memoryFile.parentFile?.mkdirs()
-            memoryFile.writeText(memory.toString())
-        }
-        return memory
+            val legacy = JSONObject(memoryFile.readText()).optJSONObject("facts") ?: JSONObject()
+            legacy.keys().forEach { key -> PersonalContextStore.memorySet(context, key, legacy.optString(key)) }
+            memoryFile.delete()
+        }.onFailure { memoryFile.delete() }
+    }
+
+    companion object {
+        private val STOPWORDS = setOf(
+            "the", "and", "for", "with", "you", "your", "are", "was", "were", "been", "this",
+            "that", "what", "when", "where", "who", "whom", "why", "how", "does", "did", "can",
+            "could", "would", "should", "will", "about", "from", "they", "them", "their", "its",
+            "have", "has", "had", "but", "not", "any", "all", "out", "get", "got", "tell", "ask",
+            "please", "let", "she", "her", "his", "him", "our", "into", "than", "then", "there",
+            "here", "just", "like", "want", "need", "say", "said", "tonight", "today"
+        )
     }
 }

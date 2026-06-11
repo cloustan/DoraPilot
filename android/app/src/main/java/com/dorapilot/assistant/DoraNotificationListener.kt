@@ -5,8 +5,8 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 
 /**
- * Captures recent notifications (and messaging-app messages) into the in-memory
- * [NotificationStore] when the user has enabled those context sources. This is
+ * Captures recent notifications (and messaging-app messages) into the encrypted
+ * [PersonalContextStore] when the user has enabled those context sources. This is
  * the Play-policy-compliant way to give Dora message/notification awareness
  * without the restricted READ_SMS / READ_CALL_LOG permissions.
  *
@@ -47,13 +47,13 @@ class DoraNotificationListener : NotificationListenerService() {
             pm.getApplicationLabel(pm.getApplicationInfo(sbn.packageName, 0)).toString()
         }.getOrDefault(sbn.packageName)
 
-        NotificationStore.add(
-            pkg = sbn.packageName,
-            appLabel = appLabel,
+        PersonalContextStore.insertItem(
+            context = applicationContext,
+            source = if (isMessage) "message" else "notification",
+            app = appLabel,
             title = title,
-            text = text,
-            category = category,
-            postTime = sbn.postTime,
+            body = text,
+            ts = sbn.postTime,
             isMessage = isMessage
         )
     }

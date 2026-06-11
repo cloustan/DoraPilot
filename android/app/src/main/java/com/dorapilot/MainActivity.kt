@@ -144,13 +144,14 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    private fun composeSystemPrompt(userSystem: String): String {
+    private fun composeSystemPrompt(userSystem: String, prompt: String): String {
         val baseSystem = userSystem.trim().ifBlank {
             "You are Dora, a helpful on-phone assistant that can also control this device " +
-                "(flashlight, media playback, volume, opening apps, system settings). " +
+                "(flashlight, media playback, volume, opening apps, system settings) and can " +
+                "answer from the user's on-device personal data when relevant. " +
                 "Keep replies short and direct: 1-3 sentences or a few brief bullet points."
         }
-        val contextSummary = runCatching { personalContextEngine.summaryForPrompt() }.getOrDefault("")
+        val contextSummary = runCatching { personalContextEngine.contextForPrompt(prompt) }.getOrDefault("")
         return if (contextSummary.isBlank()) baseSystem else "$baseSystem\n\n$contextSummary"
     }
 
@@ -433,7 +434,7 @@ class MainActivity : AppCompatActivity() {
                         }
                         val requestPayload = JSONObject()
                             .put("prompt", prompt)
-                            .put("system", composeSystemPrompt(payload.optString("system", "")))
+                            .put("system", composeSystemPrompt(payload.optString("system", ""), prompt))
                             .put("history", conversationHistorySnapshot())
                             .put("endpoint", backendConfig.endpoint)
                             .put("model", backendConfig.model)

@@ -147,4 +147,8 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.work:work-runtime-ktx:2.10.1")
     implementation("com.microsoft.onnxruntime:onnxruntime-android:+")
+    // Encrypted on-device store for personal context (SQLCipher + Keystore-backed key).
+    implementation("net.zetetic:android-database-sqlcipher:4.5.4")
+    implementation("androidx.sqlite:sqlite-ktx:2.4.0")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 }

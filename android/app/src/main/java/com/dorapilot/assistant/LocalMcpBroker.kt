@@ -240,6 +240,20 @@ class LocalMcpBroker(
             )
             put(
                 JSONObject()
+                    .put("name", "personal_context.search")
+                    .put("description", "Search the user's on-device personal data (messages, notifications, calendar) for items relevant to a query, to answer questions like 'when does my friend's flight land and what restaurant did they suggest'.")
+                    .put(
+                        "input_schema",
+                        JSONObject().put("type", "object").put(
+                            "properties",
+                            JSONObject()
+                                .put("query", JSONObject().put("type", "string"))
+                                .put("limit", JSONObject().put("type", "number"))
+                        ).put("required", JSONArray().put("query"))
+                    )
+            )
+            put(
+                JSONObject()
                     .put("name", "personal_context.get_sources")
                     .put("description", "List personal-context sources (notifications, messages, calendar, contacts, usage) with enabled + permission status.")
                     .put("input_schema", JSONObject().put("type", "object"))
@@ -459,6 +473,10 @@ class LocalMcpBroker(
                 deviceControl.setVolume(percent, direction)
             }
             "personal_context.get_snapshot" -> personalContext.getSnapshot()
+            "personal_context.search" -> personalContext.searchPersonalData(
+                args.optString("query", "").trim(),
+                args.optInt("limit", 8)
+            )
             "personal_context.get_sources" -> personalContext.getSources()
             "personal_context.set_source" -> personalContext.setSource(
                 args.optString("key", "").trim(),
