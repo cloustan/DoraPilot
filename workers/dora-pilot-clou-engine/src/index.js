@@ -113,11 +113,21 @@ async function handleSearch(request, env) {
         } catch {}
     }
 
-    // Real web results via the DuckDuckGo HTML endpoint (organic results with
-    // snippets) - covers current/dynamic queries the Instant Answer API misses.
-    try {
-        for (const r of await ddgHtml(query)) results.push(r);
-    } catch {}
+    // Preferred web search: Brave Search API (real results, keyed, scalable).
+    // Falls back to DuckDuckGo when the key is unset/over quota.
+    if (env.BRAVE_API_KEY) {
+        try {
+            for (const r of await braveSearch(query, env)) results.push(r);
+        } catch {}
+    }
+
+    // Free fallback: DuckDuckGo HTML organic results (no key) when Brave is
+    // absent or returned little.
+    if (results.length < 3) {
+        try {
+            for (const r of await ddgHtml(query)) results.push(r);
+        } catch {}
+    }
 
     // DuckDuckGo Instant Answer API for entity abstracts (fetched server-side).
     if (results.length < 3) {
@@ -185,6 +195,31 @@ async function handleSearch(request, env) {
         answer,
         results: results.slice(0, 6)
     });
+}
+
+async function braveSearch(query, env) {
+    const out = [];
+    const key = `${env.BRAVE_API_KEY || ""}`.trim();
+    if (!key) return out;
+    const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=6`;
+    const resp = await fetch(url, {
+        headers: {
+            accept: "application/json",
+            "accept-encoding": "gzip",
+            "x-subscription-token": key
+        }
+    });
+    if (!resp.ok) return out;
+    const data = await resp.json();
+    // Brave instant answer-ish blocks first, then organic web results.
+    const desc = stripTags(data?.infobox?.long_desc || "");
+    if (desc) out.push({ title: stripTags(data?.infobox?.title || query), snippet: desc, url: data?.infobox?.url || "", source: "Brave" });
+    for (const r of (data?.web?.results || []).slice(0, 6)) {
+        const title = stripTags(r.title || "");
+        const snippet = stripTags(r.description || "");
+        if (title && snippet) out.push({ title, snippet, url: r.url || "", source: "Brave" });
+    }
+    return out;
 }
 
 async function ddgHtml(query) {

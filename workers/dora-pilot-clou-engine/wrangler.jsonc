@@ -5,6 +5,12 @@
     "ai": {
         "binding": "AI"
     },
+    // Brave Search API key. Empty by default (falls back to DuckDuckGo).
+    // Override with a real key as a Secret in the dashboard (Variables and Secrets)
+    // or via `wrangler secret put BRAVE_API_KEY` - a Secret takes precedence.
+    "vars": {
+        "BRAVE_API_KEY": ""
+    },
     "routes": [
         {
             "pattern": "ai.api.pilot.dora.ai-engine-v1.cloustan.org",
