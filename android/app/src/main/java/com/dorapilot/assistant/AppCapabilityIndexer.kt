@@ -186,7 +186,8 @@ class AppCapabilityIndexer(private val context: Context) {
     }
 
     companion object {
-        private const val INDEX_KEY = "cap_index_updated"
+        const val INTERNAL_MEMORY_KEY = "cap_index_updated"
+        private const val INDEX_KEY = INTERNAL_MEMORY_KEY
         private const val DEFAULT_TTL_MS = 6L * 60 * 60 * 1000 // 6 hours
 
         private val STOPWORDS = setOf(

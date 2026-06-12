@@ -20,13 +20,18 @@ class DeviceCommandRouter(
     private val timelineIntelligence: TimelineIntelligenceServer? = null,
     private val webSearch: DeviceWebSearchServer? = null,
     private val contactResolver: ((String) -> String?)? = null,
-    private val deviceSearchFallback: ((String) -> JSONObject)? = null
+    private val deviceSearchFallback: ((String) -> JSONObject)? = null,
+    private val personalContext: PersonalContextEngine? = null
 ) {
     fun tryHandle(rawPrompt: String): JSONObject? {
         val prompt = rawPrompt.trim()
         if (prompt.isEmpty()) return null
         val text = prompt.lowercase().replace(Regex("[\\p{Punct}]"), " ").replace(Regex("\\s+"), " ").trim()
         if (text.isEmpty()) return null
+
+        // Explicit memory commands run before the question heuristics so
+        // "what do you remember" is answered instantly instead of web-searched.
+        memoryAction(prompt, text)?.let { return it }
 
         // Don't hijack informational questions (e.g. "how does bluetooth work")
         // unless they also carry a clear imperative cue ("can you turn on ...").
@@ -57,6 +62,80 @@ class DeviceCommandRouter(
         textIntelligence?.parseAndRun(prompt)?.let { return it }
         if (!isPersonalContextQuery(text) && wantsWebSearch(text)) {
             runWebSearch(prompt)?.let { return it }
+        }
+        return null
+    }
+
+    /**
+     * Deterministic explicit-memory commands: "remember my gym code is 4821",
+     * "what do you remember", "forget my gym code", "what's my gym code".
+     * Backed by the encrypted PersonalContextStore memory table; the same facts
+     * are injected into every model prompt as "Known user facts".
+     */
+    private fun memoryAction(prompt: String, text: String): JSONObject? {
+        val pc = personalContext ?: return null
+
+        if (RECALL_ALL_PHRASES.any { text == it || text.startsWith("$it ") }) {
+            val facts = pc.memoryObject().optJSONObject("facts") ?: JSONObject()
+            if (facts.length() == 0) {
+                return JSONObject().put("ok", true).put("device_action", false)
+                    .put("output", "I don't have any saved memories yet. Say \"remember ...\" and I'll keep it.")
+            }
+            val lines = facts.keys().asSequence()
+                .map { "- $it: ${facts.optString(it)}" }
+                .joinToString("\n")
+            return JSONObject().put("ok", true).put("device_action", false)
+                .put("output", "Here's what I remember:\n$lines")
+        }
+
+        Regex("^(?:please )?forget (?:about )?(?:my )?(.{2,60})$").find(text)?.let { match ->
+            val rawKey = match.groupValues[1].trim()
+            val facts = pc.memoryObject().optJSONObject("facts") ?: JSONObject()
+            val existing = facts.keys().asSequence().firstOrNull { key ->
+                val k = key.lowercase()
+                k == rawKey || k.contains(rawKey) || rawKey.contains(k)
+            }
+            return if (existing != null) {
+                pc.forget(existing)
+                JSONObject().put("ok", true).put("device_action", true)
+                    .put("output", "Forgot \"$existing\".")
+            } else {
+                JSONObject().put("ok", true).put("device_action", false)
+                    .put("output", "I don't have a memory matching \"$rawKey\".")
+            }
+        }
+
+        Regex("^(?:please\\s+)?remember\\s+(?:that\\s+)?(.+)$", RegexOption.IGNORE_CASE)
+            .find(prompt)?.let { match ->
+                val body = match.groupValues[1].trim().trimEnd('.', '!')
+                if (body.isBlank()) return null
+                val kv = Regex("^(?:my\\s+)?(.+?)\\s+(?:is|are|=)\\s+(.+)$", RegexOption.IGNORE_CASE).find(body)
+                val key: String
+                val value: String
+                if (kv != null) {
+                    key = kv.groupValues[1].trim().lowercase()
+                    value = kv.groupValues[2].trim()
+                } else {
+                    key = "note " + java.text.SimpleDateFormat("MMM d HH:mm", java.util.Locale.US)
+                        .format(java.util.Date())
+                    value = body
+                }
+                if (value.isBlank()) return null
+                pc.remember(key, value)
+                return JSONObject().put("ok", true).put("device_action", true)
+                    .put("output", "Remembered: $key \u2192 $value")
+            }
+
+        // Instant recall only on an exact stored key; anything fuzzier falls
+        // through to the model, which sees the same facts in its context.
+        Regex("^(?:what is|what s|whats) my (.{2,60})$").find(text)?.let { match ->
+            val key = match.groupValues[1].trim()
+            val facts = pc.memoryObject().optJSONObject("facts") ?: JSONObject()
+            val exact = facts.keys().asSequence().firstOrNull { it.lowercase() == key }
+            if (exact != null) {
+                return JSONObject().put("ok", true).put("device_action", false)
+                    .put("output", "Your $exact is ${facts.optString(exact)}.")
+            }
         }
         return null
     }
@@ -481,6 +560,16 @@ class DeviceCommandRouter(
     }
 
     companion object {
+        private val RECALL_ALL_PHRASES = listOf(
+            "what do you remember",
+            "what do you know about me",
+            "what have you remembered",
+            "what are my memories",
+            "list my memories",
+            "list memories",
+            "show my memories",
+            "show memories"
+        )
         private val QUESTION_STARTS = setOf(
             "what", "whats", "how", "why", "who", "whom", "whose", "when", "where",
             "which", "is", "are", "was", "were", "am", "do", "does", "did", "can",

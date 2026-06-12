@@ -424,7 +424,8 @@ class PersonalContextEngine(
     }
 
     fun isSourceGranted(key: String): Boolean = when (key) {
-        ContextSourcesConfig.NOTIFICATIONS, ContextSourcesConfig.MESSAGES -> hasNotificationAccess()
+        ContextSourcesConfig.NOTIFICATIONS, ContextSourcesConfig.MESSAGES,
+        ContextSourcesConfig.SUMMARIES -> hasNotificationAccess()
         ContextSourcesConfig.CALENDAR -> calendarReader.hasPermission()
         ContextSourcesConfig.CONTACTS -> contactsReader.hasPermission()
         ContextSourcesConfig.USAGE -> hasUsageAccess()
@@ -453,7 +454,13 @@ class PersonalContextEngine(
 
     fun memoryObject(): JSONObject {
         migrateLegacyMemoryIfNeeded()
-        return JSONObject().put("facts", PersonalContextStore.memoryAll(context))
+        val all = PersonalContextStore.memoryAll(context)
+        // Internal bookkeeping keys live in the same table but are not user facts.
+        val facts = JSONObject()
+        all.keys().forEach { key ->
+            if (key !in INTERNAL_MEMORY_KEYS) facts.put(key, all.optString(key))
+        }
+        return JSONObject().put("facts", facts)
     }
 
     private fun migrateLegacyMemoryIfNeeded() {
@@ -466,6 +473,10 @@ class PersonalContextEngine(
     }
 
     companion object {
+        private val INTERNAL_MEMORY_KEYS = setOf(
+            AppCapabilityIndexer.INTERNAL_MEMORY_KEY,
+            AutomationServer.AUTONOMY_PAUSED_KEY
+        )
         private val STOPWORDS = setOf(
             "the", "and", "for", "with", "you", "your", "are", "was", "were", "been", "this",
             "that", "what", "when", "where", "who", "whom", "why", "how", "does", "did", "can",
