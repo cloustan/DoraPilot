@@ -42,7 +42,10 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
     private val toyboxShellManager = ToyboxShellManager()
     private val mainBackendClient = MainBackendClient()
     private val backendConfig = BackendConfig.load()
-    private val localOnnxRuntimeEngine = LocalOnnxRuntimeEngine(context, backendConfig)
+    // Shared process-wide engine pool: one loaded model serves the overlay,
+    // app chat, and notification summaries; idle weights auto-unload.
+    private val localOnnxRuntimeEngine: LocalOnnxRuntimeEngine
+        get() = SharedLocalEngine.get(context)
     private val modelRegistryDownloader = ModelRegistryDownloader(context, backendConfig)
     private val naturalTtsPlayer = NaturalTtsPlayer(
         context = context,
@@ -126,7 +129,8 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
         timelineIntelligence = timelineIntelligenceServer,
         webSearch = deviceWebSearchServer,
         contactResolver = { name -> personalContextEngine.resolveContactNumber(name) },
-        deviceSearchFallback = { query -> capabilityScanner.findTools(query, 8) }
+        deviceSearchFallback = { query -> capabilityScanner.findTools(query, 8) },
+        personalContext = personalContextEngine
     )
     private val localMcpBroker = LocalMcpBroker(
         scanner = capabilityScanner,
@@ -341,59 +345,49 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
                 }
                 "agent.infer" -> backgroundExecutor.execute {
                     runCatching {
-                        val useLocal = payload.optBoolean("use_local", false)
-                        if (useLocal) {
-                            val prompt = payload.optString("prompt", "").trim()
-                            appendConversationHistory("user", prompt)
-                            // Instant device control still works offline in local mode
-                            // (the router is native and needs no network).
-                            val deviceResult = deviceCommandRouter.tryHandle(prompt)
-                            if (deviceResult != null) {
-                                if (deviceResult.optBoolean("ok", false)) {
-                                    appendConversationHistory("assistant", deviceResult.optString("output", ""))
+                        val prompt = payload.optString("prompt", "").trim()
+                        val mode = payload.optString("mode", "").trim().lowercase().ifBlank {
+                            if (payload.optBoolean("use_local", false)) "local" else "auto"
+                        }
+                        appendConversationHistory("user", prompt)
+                        when (mode) {
+                            // Local means local: every reply comes from the on-device
+                            // model. No deterministic router, no web search, no cloud.
+                            "local" -> runPureLocalInference(payload, prompt)
+                            // Cloud means cloud: every reply comes from the configured
+                            // cloud model.
+                            "cloud" -> runPureCloudInference(payload, prompt)
+                            // Auto is the smart router: deterministic control first,
+                            // then the model-driven tool loop, then the instant device
+                            // router, then plain inference (local model when one is
+                            // configured, cloud otherwise).
+                            else -> {
+                                if (tryAgentControl(prompt)) {
+                                    return@execute
                                 }
-                                emitTerminalStream("backend", "inference result=$deviceResult")
-                                return@execute
-                            }
-                            val localResult = localOnnxRuntimeEngine.infer(payload)
-                            if (localResult.optBoolean("ok", false)) {
-                                appendConversationHistory("assistant", localResult.optString("output", ""))
-                            }
-                            emitTerminalStream("local_ai", "inference result=$localResult")
-                        } else {
-                            val prompt = payload.optString("prompt", "").trim()
-                            appendConversationHistory("user", prompt)
-                            // Deterministic fast-path for clear control commands (reliable).
-                            if (tryAgentControl(prompt)) {
-                                return@execute
-                            }
-                            // Multi-step / compound requests AND conversational control
-                            // of skills/automations run the model-driven tool-calling loop.
-                            if (looksMultiStep(prompt) || isAgentControl(prompt)) {
-                                runAgentTaskLoop(JSONObject().put("goal", prompt))
-                                return@execute
-                            }
-                            val deviceResult = deviceCommandRouter.tryHandle(prompt)
-                            if (deviceResult != null) {
-                                if (deviceResult.optBoolean("ok", false)) {
-                                    appendConversationHistory("assistant", deviceResult.optString("output", ""))
+                                val preferLocal = localOnnxRuntimeEngine.isConfigured()
+                                if (looksMultiStep(prompt) || isAgentControl(prompt)) {
+                                    if (preferLocal) {
+                                        runLocalAgentTaskLoop(JSONObject().put("goal", prompt))
+                                    } else {
+                                        runAgentTaskLoop(JSONObject().put("goal", prompt))
+                                    }
+                                    return@execute
                                 }
-                                emitTerminalStream("backend", "inference result=$deviceResult")
-                                return@execute
+                                val deviceResult = deviceCommandRouter.tryHandle(prompt)
+                                if (deviceResult != null) {
+                                    if (deviceResult.optBoolean("ok", false)) {
+                                        appendConversationHistory("assistant", deviceResult.optString("output", ""))
+                                    }
+                                    emitTerminalStream("backend", "inference result=$deviceResult")
+                                    return@execute
+                                }
+                                if (preferLocal) {
+                                    runPureLocalInference(payload, prompt)
+                                } else {
+                                    runPureCloudInference(payload, prompt)
+                                }
                             }
-                            val requestPayload = JSONObject()
-                                .put("prompt", prompt)
-                                .put("system", composeSystemPrompt(payload.optString("system", ""), prompt))
-                                .put("history", conversationHistorySnapshot())
-                                .put("endpoint", backendConfig.endpoint)
-                                .put("model", backendConfig.model)
-                                .put("api_key", backendConfig.apiKey)
-                                .put("headers", backendConfig.headers)
-                            val result = mainBackendClient.infer(requestPayload)
-                            if (result.optBoolean("ok", false)) {
-                                appendConversationHistory("assistant", result.optString("output", ""))
-                            }
-                            emitTerminalStream("backend", "inference result=$result")
                         }
                     }.onFailure { error ->
                         emitTerminalStream("error", "agent.infer failed: ${error.message}")
@@ -417,21 +411,43 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
                 }
                 "model.registry_status" -> backgroundExecutor.execute {
                     runCatching {
-                        emitTerminalStream("model_registry", "status=${modelRegistryDownloader.status()}")
+                        emitTerminalStream("model_registry", "status=${modelRegistryDownloader.catalog()}")
                     }.onFailure { error ->
                         emitTerminalStream("error", "model.registry_status failed: ${error.message}")
                     }
                 }
                 "model.registry_download" -> backgroundExecutor.execute {
                     runCatching {
-                        val result = modelRegistryDownloader.download { progress ->
-                            emitTerminalStream("model_registry", progress)
+                        val modelId = payload.optString("model_id", "").trim()
+                        val result = if (modelId.isEmpty()) {
+                            modelRegistryDownloader.download { progress ->
+                                emitTerminalStream("model_registry", progress)
+                            }
+                        } else {
+                            modelRegistryDownloader.download(modelId) { progress ->
+                                emitTerminalStream("model_registry", progress)
+                            }
                         }
                         if (result.optBoolean("ok", false)) {
                             emitTerminalStream("local_ai", "loader check=${localOnnxRuntimeEngine.inspectLocalSetup()}")
                         }
                     }.onFailure { error ->
                         emitTerminalStream("error", "model.registry_download failed: ${error.message}")
+                    }
+                }
+                "model.set_active" -> backgroundExecutor.execute {
+                    runCatching {
+                        val modelId = payload.optString("model_id", "").trim()
+                        val result = modelRegistryDownloader.setActiveModel(modelId)
+                        if (result.optBoolean("ok", false)) {
+                            localOnnxRuntimeEngine.resetGenAiRuntime()
+                        }
+                        emitTerminalStream("model_registry", "status=${modelRegistryDownloader.catalog()}")
+                        if (!result.optBoolean("ok", false)) {
+                            emitTerminalStream("error", "model.set_active failed: ${result.optString("error")}")
+                        }
+                    }.onFailure { error ->
+                        emitTerminalStream("error", "model.set_active failed: ${error.message}")
                     }
                 }
                 "agent.run_task" -> backgroundExecutor.execute {
@@ -671,6 +687,40 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
         return if (contextSummary.isBlank()) baseSystem else "$baseSystem\n\n$contextSummary"
     }
 
+    /**
+     * Pure on-device inference: the reply always comes from the local model
+     * (with the same system prompt + conversation history the cloud gets).
+     * Nothing here touches the network or the deterministic routers.
+     */
+    private fun runPureLocalInference(payload: JSONObject, prompt: String) {
+        val localPayload = JSONObject(payload.toString())
+            .put("system", composeSystemPrompt(payload.optString("system", ""), prompt))
+            .put("history", conversationHistorySnapshot())
+        val localResult = localOnnxRuntimeEngine.infer(localPayload)
+        if (localResult.optBoolean("ok", false)) {
+            rewriteLocalActionJson(localResult, prompt)
+            appendConversationHistory("assistant", localResult.optString("output", ""))
+        }
+        emitTerminalStream("local_ai", "inference result=$localResult")
+    }
+
+    /** Pure cloud inference: the reply always comes from the configured backend model. */
+    private fun runPureCloudInference(payload: JSONObject, prompt: String) {
+        val requestPayload = JSONObject()
+            .put("prompt", prompt)
+            .put("system", composeSystemPrompt(payload.optString("system", ""), prompt))
+            .put("history", conversationHistorySnapshot())
+            .put("endpoint", backendConfig.endpoint)
+            .put("model", backendConfig.model)
+            .put("api_key", backendConfig.apiKey)
+            .put("headers", backendConfig.headers)
+        val result = mainBackendClient.infer(requestPayload)
+        if (result.optBoolean("ok", false)) {
+            appendConversationHistory("assistant", result.optString("output", ""))
+        }
+        emitTerminalStream("backend", "inference result=$result")
+    }
+
     private fun runAgentTaskLoop(payload: JSONObject) {
         val goal = payload.optString("goal", payload.optString("prompt", "")).trim()
         val apiKey = backendConfig.apiKey.trim()
@@ -696,9 +746,19 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
 
         setOverlayWorking()
 
+        if (payload.optBoolean("use_local", false)) {
+            runLocalAgentTaskLoop(payload)
+            return
+        }
+
         if (apiKey.isEmpty()) {
-            // No cloud model configured -> best-effort deterministic chaining.
-            runDeterministicChain(goal)
+            // No cloud model configured -> prefer the on-device model's tool
+            // loop; deterministic chaining only as last resort.
+            if (localOnnxRuntimeEngine.isConfigured()) {
+                runLocalAgentTaskLoop(payload)
+            } else {
+                runDeterministicChain(goal)
+            }
             return
         }
 
@@ -734,6 +794,234 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
             modelFailure -> runDeterministicChain(goal)
             else -> emitAgentFinal("")
         }
+    }
+
+    /**
+     * Local-model twin of [runAgentTaskLoop]: same routing, same MCP tool
+     * catalog, same fallbacks - but the tool choice is made by the on-device
+     * GenAI model via prompt-based JSON tool calling (the local runtime has no
+     * native function-call API).
+     */
+    private fun runLocalAgentTaskLoop(payload: JSONObject) {
+        val goal = payload.optString("goal", payload.optString("prompt", "")).trim()
+        val maxRetries = payload.optInt("max_retries", 2).coerceIn(0, 4)
+
+        if (goal.isEmpty()) {
+            emitTerminalStream("error", "agent.run_task requires goal")
+            return
+        }
+
+        resolveDeterministicAnswer(goal)?.let { deterministic ->
+            emitAgentFinal(deterministic)
+            return
+        }
+
+        if (!looksMultiStep(goal)) {
+            deviceCommandRouter.tryHandle(goal)?.let { deviceResult ->
+                emitAgentFinal(deviceResult.optString("output", "Done."))
+                return
+            }
+        }
+
+        setOverlayWorking()
+
+        if (!localOnnxRuntimeEngine.isConfigured()) {
+            // No local model available -> best-effort deterministic chaining.
+            runDeterministicChain(goal)
+            return
+        }
+
+        val toolsCatalog = agentToolCatalog()
+        val toolNames = buildToolNameSet(toolsCatalog)
+        val toolGuide = compactToolGuide(toolsCatalog)
+        val steps = decomposeSteps(goal)
+        emitTerminalStream("agent", "Agent goal (local): $goal -> ${steps.size} step(s)")
+
+        val outputs = mutableListOf<String>()
+        var modelFailure = false
+        for ((index, step) in steps.withIndex()) {
+            emitTerminalStream("agent", "Step ${index + 1}/${steps.size}: $step")
+            val stepResult = runLocalAgentStep(step, toolGuide, toolNames, maxRetries)
+            if (stepResult == null) {
+                modelFailure = true
+                deviceCommandRouter.tryHandle(step)?.let {
+                    outputs += it.optString("output", "Done.").trim()
+                }
+            } else if (stepResult.isNotBlank()) {
+                outputs += stepResult.trim()
+            }
+            runCatching { Thread.sleep(200) }
+        }
+
+        val answer = outputs.filter { it.isNotEmpty() }.joinToString(" ")
+        when {
+            answer.isNotBlank() -> emitAgentFinal(answer)
+            modelFailure -> runDeterministicChain(goal)
+            else -> emitAgentFinal("")
+        }
+    }
+
+    /**
+     * Local twin of [runAgentStep]: the on-device model picks a tool by
+     * emitting a JSON object; we execute it through the same MCP broker with
+     * the same normalization and retry behaviour as the cloud loop. Returns
+     * null only when local inference itself fails.
+     */
+    private fun runLocalAgentStep(
+        step: String,
+        toolGuide: String,
+        toolNames: Set<String>,
+        maxRetries: Int
+    ): String? {
+        val system = buildString {
+            append("You are Dora's phone-control agent. You can call ONE tool per request.\n")
+            append("Available tools:\n")
+            append(toolGuide)
+            append("\nRespond with ONLY a single JSON object, no other text:\n")
+            append("{\"tool\": \"<tool name>\", \"args\": {...}} to call a tool, or\n")
+            append("{\"answer\": \"<short answer>\"} to answer directly.\n")
+            append("For questions needing live or factual info use device_web_search.search. ")
+            append("Use personal-data tools only when the user asks about their own ")
+            append("notifications, messages, or saved facts. Never ask for permission.")
+        }
+        val inferPayload = JSONObject()
+            .put("prompt", step)
+            .put("system", system)
+            .put("max_tokens", 192)
+            .put("temperature", 0.0)
+        val result = localOnnxRuntimeEngine.infer(inferPayload)
+        if (!result.optBoolean("ok", false)) {
+            emitTerminalStream("error", "Local model request failed: ${result.optString("error")}")
+            return null
+        }
+        val output = result.optString("output", "").trim()
+        val call = extractJsonObject(output)
+
+        if (call == null) {
+            if (output.isNotEmpty()) return output
+            return deviceCommandRouter.tryHandle(step)?.optString("output")
+        }
+
+        val answer = call.optString("answer", "").trim()
+        if (answer.isNotEmpty() && !call.has("tool")) return answer
+
+        val rawName = call.optString("tool", "").trim()
+        val toolName = normalizeToolName(rawName, toolNames)
+        if (toolName.isEmpty() || toolName !in toolNames) {
+            emitTerminalStream("agent", "Local model picked unknown tool '$rawName', skipping.")
+            return deviceCommandRouter.tryHandle(step)?.optString("output")
+        }
+        val rawArgs = call.optJSONObject("args") ?: JSONObject()
+        val toolArgs = normalizeToolArgs(toolName, rawArgs, step)
+        emitTerminalStream("agent", "Calling tool: $toolName $toolArgs")
+        val toolResult = callToolWithRetry(toolName, toolArgs, maxRetries)
+        emitTerminalStream("mcp", "tool=$toolName result=$toolResult")
+        val out = toolOutputText(toolResult)
+        if (out.isEmpty()) {
+            return deviceCommandRouter.tryHandle(step)?.optString("output")
+        }
+        return out
+    }
+
+    /**
+     * Compact one-line-per-tool catalog for the local model's system prompt.
+     * Full JSON schemas would blow up the 1.5B model's prompt budget, so each
+     * tool is listed as "name(arg, arg): description".
+     */
+    private fun compactToolGuide(tools: JSONArray): String {
+        val sb = StringBuilder()
+        for (i in 0 until tools.length()) {
+            val tool = tools.optJSONObject(i) ?: continue
+            val name = tool.optString("name", "").trim()
+            if (name.isEmpty()) continue
+            val params = tool.optJSONObject("input_schema")
+                ?.optJSONObject("properties")
+                ?.keys()
+                ?.asSequence()
+                ?.joinToString(", ")
+                .orEmpty()
+            val description = tool.optString("description", "").trim().take(110)
+            sb.append("- ").append(name).append("(").append(params).append(")")
+            if (description.isNotEmpty()) sb.append(": ").append(description)
+            sb.append("\n")
+        }
+        return sb.toString()
+    }
+
+    /**
+     * The Flash model often answers plain chat with a raw device-action JSON
+     * (e.g. {"action":"set_setting","setting":"flashlight","value":true})
+     * instead of text. When the whole reply is such a JSON object, translate
+     * it into a phrase the deterministic device router understands and run
+     * it, replacing the output with the router's human-readable result so
+     * the user never sees raw JSON.
+     */
+    private fun rewriteLocalActionJson(localResult: JSONObject, prompt: String) {
+        val output = localResult.optString("output", "").trim()
+        if (!output.startsWith("{")) return
+        val call = extractJsonObject(output) ?: return
+        if (!call.has("action")) return
+        val phrase = actionJsonToPhrase(call)
+        val routed = phrase?.let { deviceCommandRouter.tryHandle(it) }
+        val replacement = if (routed != null && routed.optBoolean("ok", false)) {
+            routed.optString("output", "Done.")
+        } else {
+            "I couldn't run that as a device action. Try rephrasing the command."
+        }
+        localResult.put("local_action_json", call.toString())
+        localResult.put("output", replacement)
+        if (phrase != null) localResult.put("local_action_phrase", phrase)
+        emitTerminalStream(
+            "local_ai",
+            "rewrote model action JSON for prompt='$prompt' phrase='${phrase ?: "?"}'"
+        )
+    }
+
+    /** Map the Flash model's known action JSON shapes onto router phrases. */
+    private fun actionJsonToPhrase(call: JSONObject): String? {
+        if (call.optString("action") != "set_setting") return null
+        val setting = call.optString("setting", "").lowercase()
+        val rawValue = call.opt("value")
+        val on = rawValue == true ||
+            rawValue.toString().lowercase() in setOf("true", "on", "1", "enable")
+        return when {
+            setting.contains("flashlight") || setting.contains("torch") ->
+                if (on) "turn flashlight on" else "turn flashlight off"
+            setting.contains("volume") -> {
+                val percent = (rawValue as? Number)?.toInt()
+                when {
+                    percent != null -> "set volume to $percent%"
+                    on -> "volume up"
+                    else -> "mute volume"
+                }
+            }
+            else -> null
+        }
+    }
+
+    /** Extract the first balanced JSON object from model output (tolerates fences/prose). */
+    private fun extractJsonObject(text: String): JSONObject? {
+        val start = text.indexOf('{')
+        if (start < 0) return null
+        var depth = 0
+        var inString = false
+        var escaped = false
+        for (i in start until text.length) {
+            val c = text[i]
+            when {
+                escaped -> escaped = false
+                inString && c == '\\' -> escaped = true
+                c == '"' -> inString = !inString
+                !inString && c == '{' -> depth += 1
+                !inString && c == '}' -> {
+                    depth -= 1
+                    if (depth == 0) {
+                        return runCatching { JSONObject(text.substring(start, i + 1)) }.getOrNull()
+                    }
+                }
+            }
+        }
+        return null
     }
 
     /**

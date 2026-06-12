@@ -55,7 +55,12 @@ class MainActivity : AppCompatActivity() {
     }
     private val mainBackendClient = MainBackendClient()
     private val backendConfig = BackendConfig.load()
-    private val localOnnxRuntimeEngine by lazy { LocalOnnxRuntimeEngine(this, backendConfig) }
+    // Shared process-wide engine pool (see SharedLocalEngine).
+    private val localOnnxRuntimeEngine: com.dorapilot.assistant.LocalOnnxRuntimeEngine
+        get() = com.dorapilot.assistant.SharedLocalEngine.get(this)
+    private val modelRegistryDownloader by lazy {
+        com.dorapilot.assistant.ModelRegistryDownloader(this, backendConfig)
+    }
     private val naturalTtsPlayer by lazy {
         com.dorapilot.assistant.NaturalTtsPlayer(
             context = this,
@@ -147,7 +152,8 @@ class MainActivity : AppCompatActivity() {
             timelineIntelligence = timelineIntelligenceServer,
             webSearch = deviceWebSearchServer,
             contactResolver = { name -> personalContextEngine.resolveContactNumber(name) },
-            deviceSearchFallback = { query -> capabilityScanner.findTools(query, 8) }
+            deviceSearchFallback = { query -> capabilityScanner.findTools(query, 8) },
+            personalContext = personalContextEngine
         )
     }
     private val personalContextEngine by lazy {
@@ -378,6 +384,43 @@ class MainActivity : AppCompatActivity() {
         return snapshot
     }
 
+    /**
+     * Pure on-device inference: the reply always comes from the local model
+     * (same system prompt + history as cloud), with token streaming deltas.
+     */
+    private fun runPureLocalInference(payload: JSONObject, prompt: String) {
+        val localPayload = JSONObject(payload.toString())
+            .put("system", composeSystemPrompt(payload.optString("system", ""), prompt))
+            .put("history", conversationHistorySnapshot())
+        val localResult = localOnnxRuntimeEngine.infer(localPayload) { piece ->
+            emitTerminalStream(
+                "local_ai",
+                "inference delta=${JSONObject().put("text", piece)}"
+            )
+        }
+        if (localResult.optBoolean("ok", false)) {
+            appendConversationHistory("assistant", localResult.optString("output", ""))
+        }
+        emitTerminalStream("local_ai", "inference result=$localResult")
+    }
+
+    /** Pure cloud inference: the reply always comes from the configured backend model. */
+    private fun runPureCloudInference(payload: JSONObject, prompt: String) {
+        val requestPayload = JSONObject()
+            .put("prompt", prompt)
+            .put("system", composeSystemPrompt(payload.optString("system", ""), prompt))
+            .put("history", conversationHistorySnapshot())
+            .put("endpoint", backendConfig.endpoint)
+            .put("model", backendConfig.model)
+            .put("api_key", backendConfig.apiKey)
+            .put("headers", backendConfig.headers)
+        val result = mainBackendClient.infer(requestPayload)
+        if (result.optBoolean("ok", false)) {
+            appendConversationHistory("assistant", result.optString("output", ""))
+        }
+        emitTerminalStream("backend", "inference result=$result")
+    }
+
     private fun emitTerminalStream(channel: String, chunk: String) {
         if (!::mainWebView.isInitialized) return
         val safeChannel = JSONObject.quote(channel)
@@ -517,35 +560,35 @@ class MainActivity : AppCompatActivity() {
             }
             "agent.infer" -> backgroundExecutor.execute {
                 runCatching {
-                    val useLocal = payload.optBoolean("use_local", false)
-                    if (useLocal) {
-                        val localPayload = JSONObject(payload.toString())
-                        val localResult = localOnnxRuntimeEngine.infer(localPayload)
-                        emitTerminalStream("local_ai", "inference result=$localResult")
-                    } else {
-                        val prompt = payload.optString("prompt", "").trim()
-                        appendConversationHistory("user", prompt)
-                        val deviceResult = deviceCommandRouter.tryHandle(prompt)
-                        if (deviceResult != null) {
-                            if (deviceResult.optBoolean("ok", false)) {
-                                appendConversationHistory("assistant", deviceResult.optString("output", ""))
+                    val prompt = payload.optString("prompt", "").trim()
+                    val mode = payload.optString("mode", "").trim().lowercase().ifBlank {
+                        if (payload.optBoolean("use_local", false)) "local" else "auto"
+                    }
+                    appendConversationHistory("user", prompt)
+                    when (mode) {
+                        // Local means local: the reply always comes from the
+                        // on-device model. No device router, no cloud.
+                        "local" -> runPureLocalInference(payload, prompt)
+                        // Cloud means cloud: the reply always comes from the
+                        // configured backend model.
+                        "cloud" -> runPureCloudInference(payload, prompt)
+                        // Auto: instant device router first, then inference with
+                        // the local model when one is configured, cloud otherwise.
+                        else -> {
+                            val deviceResult = deviceCommandRouter.tryHandle(prompt)
+                            if (deviceResult != null) {
+                                if (deviceResult.optBoolean("ok", false)) {
+                                    appendConversationHistory("assistant", deviceResult.optString("output", ""))
+                                }
+                                emitTerminalStream("backend", "inference result=$deviceResult")
+                                return@execute
                             }
-                            emitTerminalStream("backend", "inference result=$deviceResult")
-                            return@execute
+                            if (localOnnxRuntimeEngine.isConfigured()) {
+                                runPureLocalInference(payload, prompt)
+                            } else {
+                                runPureCloudInference(payload, prompt)
+                            }
                         }
-                        val requestPayload = JSONObject()
-                            .put("prompt", prompt)
-                            .put("system", composeSystemPrompt(payload.optString("system", ""), prompt))
-                            .put("history", conversationHistorySnapshot())
-                            .put("endpoint", backendConfig.endpoint)
-                            .put("model", backendConfig.model)
-                            .put("api_key", backendConfig.apiKey)
-                            .put("headers", backendConfig.headers)
-                        val backendResult = mainBackendClient.infer(requestPayload)
-                        if (backendResult.optBoolean("ok", false)) {
-                            appendConversationHistory("assistant", backendResult.optString("output", ""))
-                        }
-                        emitTerminalStream("backend", "inference result=$backendResult")
                     }
                 }.onFailure { error ->
                     emitTerminalStream("error", "agent.infer failed: ${error.message}")
@@ -568,6 +611,47 @@ class MainActivity : AppCompatActivity() {
                     emitTerminalStream("error", "agent.local_loader_check failed: ${error.message}")
                 }
             }
+            "model.registry_status" -> backgroundExecutor.execute {
+                runCatching {
+                    emitTerminalStream("model_registry", "status=${modelRegistryDownloader.catalog()}")
+                }.onFailure { error ->
+                    emitTerminalStream("error", "model.registry_status failed: ${error.message}")
+                }
+            }
+            "model.registry_download" -> backgroundExecutor.execute {
+                runCatching {
+                    val modelId = payload.optString("model_id", "").trim()
+                    val result = if (modelId.isEmpty()) {
+                        modelRegistryDownloader.download { progress ->
+                            emitTerminalStream("model_registry", progress)
+                        }
+                    } else {
+                        modelRegistryDownloader.download(modelId) { progress ->
+                            emitTerminalStream("model_registry", progress)
+                        }
+                    }
+                    if (result.optBoolean("ok", false)) {
+                        emitTerminalStream("local_ai", "loader check=${localOnnxRuntimeEngine.inspectLocalSetup()}")
+                    }
+                }.onFailure { error ->
+                    emitTerminalStream("error", "model.registry_download failed: ${error.message}")
+                }
+            }
+            "model.set_active" -> backgroundExecutor.execute {
+                runCatching {
+                    val modelId = payload.optString("model_id", "").trim()
+                    val result = modelRegistryDownloader.setActiveModel(modelId)
+                    if (result.optBoolean("ok", false)) {
+                        localOnnxRuntimeEngine.resetGenAiRuntime()
+                    }
+                    emitTerminalStream("model_registry", "status=${modelRegistryDownloader.catalog()}")
+                    if (!result.optBoolean("ok", false)) {
+                        emitTerminalStream("error", "model.set_active failed: ${result.optString("error")}")
+                    }
+                }.onFailure { error ->
+                    emitTerminalStream("error", "model.set_active failed: ${error.message}")
+                }
+            }
             "agent.run_task" -> {
                 emitTerminalStream(
                     "status",
@@ -585,6 +669,24 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun dispatchAgentAction(actionJson: String) {
             this@MainActivity.dispatchAgentAction(actionJson)
+        }
+
+        /**
+         * Show a native Material bottom sheet for a context menu. [itemsJson] is
+         * [{id,title,subtitle}]; the picked id is delivered back to JS via
+         * window.onContextSheetPick(id).
+         */
+        @JavascriptInterface
+        fun showContextSheet(title: String, itemsJson: String) {
+            runOnUiThread {
+                ContextSheet.show(this@MainActivity, title, itemsJson) { id ->
+                    val safe = org.json.JSONObject.quote(id)
+                    mainWebView.evaluateJavascript(
+                        "window.onContextSheetPick && window.onContextSheetPick($safe);",
+                        null
+                    )
+                }
+            }
         }
 
         @JavascriptInterface
@@ -661,6 +763,18 @@ class MainActivity : AppCompatActivity() {
         }
 
         @JavascriptInterface
+        fun getMemories(): String {
+            return runCatching { personalContextEngine.memoryObject().toString() }
+                .getOrDefault("{\"facts\":{}}")
+        }
+
+        @JavascriptInterface
+        fun forgetMemory(key: String): String {
+            return runCatching { personalContextEngine.forget(key).toString() }
+                .getOrDefault("{\"ok\":false}")
+        }
+
+        @JavascriptInterface
         fun clearConversationHistory() {
             conversationHistory.clear()
         }
@@ -673,7 +787,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun requestContextPermission(key: String) {
         when (key) {
-            ContextSourcesConfig.NOTIFICATIONS, ContextSourcesConfig.MESSAGES -> runCatching {
+            ContextSourcesConfig.NOTIFICATIONS, ContextSourcesConfig.MESSAGES,
+            ContextSourcesConfig.SUMMARIES -> runCatching {
                 startActivity(
                     Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
                         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

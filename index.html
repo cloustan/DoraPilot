@@ -666,6 +666,25 @@
 
         .settings-list { display: flex; flex-direction: column; gap: 10px; }
 
+        .settings-subhead {
+            margin: 14px 2px 0;
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.07em;
+            color: rgba(22, 35, 63, 0.5);
+        }
+
+        .memory-del-btn {
+            flex: 0 0 auto;
+            border: none;
+            background: transparent;
+            color: rgba(22, 35, 63, 0.45);
+            font-size: 14px;
+            line-height: 1;
+            padding: 10px;
+        }
+
         .settings-row {
             display: flex;
             align-items: center;
@@ -693,6 +712,19 @@
         .settings-row .sr-title { font-size: 15px; font-weight: 600; color: #16233f; }
         .settings-row .sr-desc { font-size: 12.5px; color: rgba(22, 35, 63, 0.58); margin-top: 2px; }
         .settings-row .sr-desc.needs { color: #c2410c; }
+        .model-dl-btn {
+            flex: 0 0 auto;
+            border: none;
+            border-radius: 999px;
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #fff;
+            background: #2563eb;
+            cursor: pointer;
+        }
+        .model-dl-btn:disabled { background: rgba(37, 99, 235, 0.45); cursor: default; }
+        .model-dl-btn.is-ready { background: #16a34a; }
 
         .switch { position: relative; flex: 0 0 auto; width: 50px; height: 30px; }
         .switch input { opacity: 0; width: 0; height: 0; }
@@ -889,6 +921,7 @@
         }
 
         .sidebar-footer {
+            position: relative;
             display: flex;
             flex-direction: column;
             gap: 8px;
@@ -1320,6 +1353,132 @@
             flex: 0 0 auto;
         }
 
+        .composer-attachments {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            padding: 0 6px 6px;
+        }
+        .composer-attachments[aria-hidden="true"] { display: none; }
+
+        .attach-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            max-width: 220px;
+            padding: 5px 8px;
+            border-radius: 10px;
+            background: rgba(37, 99, 235, 0.1);
+            color: rgba(17, 34, 78, 0.9);
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .attach-chip .attach-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .attach-chip .attach-remove {
+            border: none;
+            background: transparent;
+            color: inherit;
+            font-size: 11px;
+            line-height: 1;
+            padding: 0;
+            cursor: pointer;
+            opacity: 0.7;
+        }
+        @media (prefers-color-scheme: dark) {
+            .attach-chip {
+                background: rgba(138, 180, 255, 0.16);
+                color: rgba(233, 242, 255, 0.92);
+            }
+        }
+
+        .model-dropup {
+            position: absolute;
+            left: 10px;
+            bottom: calc(88px + var(--kb-offset, 0px));
+            z-index: 15;
+            display: none;
+            flex-direction: column;
+            gap: 6px;
+            min-width: 240px;
+            padding: 6px;
+            border-radius: 18px;
+            border: 1px solid rgba(205, 226, 255, 0.5);
+            background: rgba(248, 251, 255, 0.96);
+            backdrop-filter: blur(26px) saturate(160%);
+            -webkit-backdrop-filter: blur(26px) saturate(160%);
+            box-shadow: 0 18px 44px rgba(12, 28, 64, 0.22), 0 2px 8px rgba(12, 28, 64, 0.1);
+            animation: riseIn 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+        }
+
+        .model-dropup.is-open { display: flex; }
+
+        .sidebar-model-dropup {
+            left: 0;
+            right: 0;
+            bottom: calc(100% + 8px);
+            min-width: 0;
+        }
+
+        .model-option {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border: none;
+            border-radius: 12px;
+            background: transparent;
+            color: rgba(17, 34, 78, 0.94);
+            padding: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            line-height: 1.25;
+            text-align: left;
+            cursor: pointer;
+            transition: background 140ms ease;
+        }
+
+        .model-option:hover,
+        .model-option:active { background: rgba(37, 99, 235, 0.08); }
+        .model-option.is-active { background: rgba(37, 99, 235, 0.12); }
+
+        .model-option .mo-check {
+            width: 16px;
+            flex: 0 0 auto;
+            color: #2563eb;
+            font-weight: 800;
+            opacity: 0;
+            transition: opacity 140ms ease;
+        }
+
+        .model-option.is-active .mo-check { opacity: 1; }
+
+        .model-option .mo-body span {
+            display: block;
+            margin-top: 2px;
+            font-size: 11px;
+            font-weight: 500;
+            color: rgba(22, 35, 63, 0.58);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            .model-dropup {
+                border-color: rgba(178, 202, 255, 0.2);
+                background: rgba(16, 26, 52, 0.96);
+            }
+            .model-option {
+                background: transparent;
+                color: rgba(233, 242, 255, 0.94);
+            }
+            .model-option:hover,
+            .model-option:active { background: rgba(138, 180, 255, 0.12); }
+            .model-option.is-active { background: rgba(138, 180, 255, 0.18); }
+            .model-option .mo-body span { color: rgba(208, 224, 255, 0.6); }
+            .model-option .mo-check { color: #8ab4ff; }
+        }
+
         .quick-actions {
             position: absolute;
             left: 10px;
@@ -1628,9 +1787,12 @@
                 </div>
                 <div id="overlayTitle" class="overlay-title">Ask Dora Pilot</div>
                 <div class="input-wrap">
+                    <div id="composerAttachments" class="composer-attachments" aria-hidden="true"></div>
                     <div class="app-composer">
-                        <button class="composer-icon-btn composer-plus" id="composerAddBtn" type="button" aria-label="Add">+</button>
-                        <button class="composer-mode-btn" id="composerModeBtn" type="button" aria-label="Toggle inference mode">Local</button>
+                        <button class="composer-icon-btn composer-plus" id="composerAddBtn" type="button" aria-label="Attach files">+</button>
+                        <input id="composerFileInput" type="file" multiple style="display:none" aria-hidden="true" />
+                        <button class="composer-icon-btn composer-options" id="composerOptionsBtn" type="button" aria-label="Options">&#8943;</button>
+                        <button class="composer-mode-btn" id="composerModeBtn" type="button" aria-label="Choose model">Models &#9652;</button>
                         <input id="composerInput" class="composer-input" type="text" placeholder="Ask Dora Pilot" />
                         <span class="composer-trailing">
                             <button class="composer-icon-btn composer-mic" id="composerMicBtn" type="button" aria-label="Microphone">
@@ -1686,6 +1848,20 @@
                         Local Model Check <span>Inspect on-device AI setup</span>
                     </button>
                 </div>
+                <div id="modelDropup" class="model-dropup" aria-hidden="true">
+                    <button class="model-option" type="button" data-model-mode="auto">
+                        <span class="mo-check">&#10003;</span>
+                        <span class="mo-body">Auto<span>Smart routing &middot; picks for you</span></span>
+                    </button>
+                    <button class="model-option" type="button" data-model-mode="cloud">
+                        <span class="mo-check">&#10003;</span>
+                        <span class="mo-body">Cloud<span>Smartest &middot; needs internet</span></span>
+                    </button>
+                    <button class="model-option" type="button" data-model-mode="local">
+                        <span class="mo-check">&#10003;</span>
+                        <span class="mo-body">Local<span>Private &middot; runs on this phone</span></span>
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -1706,13 +1882,27 @@
                     </div>
                 </div>
                 <div class="sidebar-footer">
+                    <div id="sidebarModelMenu" class="model-dropup sidebar-model-dropup" aria-hidden="true">
+                        <button class="model-option" type="button" data-model-mode="auto">
+                            <span class="mo-check">&#10003;</span>
+                            <span class="mo-body">Auto<span>Smart routing &middot; picks for you</span></span>
+                        </button>
+                        <button class="model-option" type="button" data-model-mode="cloud">
+                            <span class="mo-check">&#10003;</span>
+                            <span class="mo-body">Cloud<span>Smartest &middot; needs internet</span></span>
+                        </button>
+                        <button class="model-option" type="button" data-model-mode="local">
+                            <span class="mo-check">&#10003;</span>
+                            <span class="mo-body">Local<span>Private &middot; runs on this phone</span></span>
+                        </button>
+                    </div>
                     <button id="sidebarSettingsBtn" class="sidebar-nav-btn" type="button">
                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
                         <div>Personal context<span>Notifications, calendar, contacts</span></div>
                     </button>
                     <button id="sidebarInferBtn" class="sidebar-nav-btn" type="button">
                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v3"/><path d="M12 18v3"/><path d="M3 12h3"/><path d="M18 12h3"/><path d="M5.6 5.6 7.7 7.7"/><path d="M16.3 16.3l2.1 2.1"/><path d="M5.6 18.4 7.7 16.3"/><path d="M16.3 7.7l2.1-2.1"/><circle cx="12" cy="12" r="4"/></svg>
-                        <div id="sidebarInferLabel">Inference mode<span>Cloud or on-device</span></div>
+                        <div id="sidebarInferLabel">Models<span>Cloud or on-device</span></div>
                     </button>
                 </div>
             </div>
@@ -1865,6 +2055,9 @@
         }
 
         function showAssistant() {
+            // The overlay WebView is long-lived: re-read the model mode saved by
+            // the main app so Local/Cloud/Auto picked there applies here too.
+            setInferMode(savedInferMode());
             resetAssistant();
             restartOverlayAnimations();
             if (!isAppMode) {
@@ -1914,7 +2107,7 @@
         const fullActionLog = [];
         const voiceStates = ["idle", "listening", "thinking", "speaking"];
         let stateIdx = 1;
-        let inferMode = "cloud";
+        let inferMode = "auto";
         let openedModelFileMenuForError = false;
         let naturalTtsInFlight = false;
         let autoListenTimer = null;
@@ -2098,20 +2291,45 @@
             composerInput.placeholder = "";
         }
 
+        const INFER_MODE_KEY = "dora_infer_mode_v1";
+
         function setInferMode(mode) {
-            inferMode = mode === "cloud" ? "cloud" : "local";
+            inferMode = ["auto", "local", "cloud"].includes(mode) ? mode : "auto";
+            try { localStorage.setItem(INFER_MODE_KEY, inferMode); } catch (_e) {}
             if (composerModeBtn) {
-                composerModeBtn.textContent = inferMode === "local" ? "Local" : "Cloud";
-                composerModeBtn.setAttribute(
-                    "aria-label",
-                    inferMode === "local" ? "Switch to cloud inference" : "Switch to local inference"
-                );
+                composerModeBtn.innerHTML = "Models \u25B4";
+                composerModeBtn.setAttribute("aria-label", "Choose model");
+            }
+            document.querySelectorAll(".model-option").forEach((opt) => {
+                opt.classList.toggle("is-active", opt.dataset.modelMode === inferMode);
+            });
+        }
+
+        function savedInferMode() {
+            try { return localStorage.getItem(INFER_MODE_KEY) || "auto"; } catch (_e) { return "auto"; }
+        }
+
+        function closeModelMenus() {
+            document.querySelectorAll(".model-dropup.is-open").forEach((menu) => {
+                menu.classList.remove("is-open");
+                menu.setAttribute("aria-hidden", "true");
+            });
+        }
+
+        function toggleModelMenu(menu) {
+            if (!menu) return;
+            const wasOpen = menu.classList.contains("is-open");
+            closeModelMenus();
+            if (!wasOpen) {
+                menu.classList.add("is-open");
+                menu.setAttribute("aria-hidden", "false");
             }
         }
 
         function buildInferPayload(prompt) {
             return {
                 prompt,
+                mode: inferMode,
                 use_local: inferMode === "local"
             };
         }
@@ -2126,6 +2344,47 @@
             } catch (_error) {
                 return null;
             }
+        }
+
+        function parseInferenceDelta(rawChunk) {
+            const marker = "inference delta=";
+            const idx = `${rawChunk}`.indexOf(marker);
+            if (idx < 0) return null;
+            try {
+                return JSON.parse(`${rawChunk}`.slice(idx + marker.length).trim());
+            } catch (_error) {
+                return null;
+            }
+        }
+
+        let streamingBubbleEl = null;
+        let streamingText = "";
+
+        function appendStreamingDelta(piece) {
+            if (!isAppMode || !chatList || !piece) return;
+            if (!streamingBubbleEl) {
+                setAppScreen("chat");
+                const emptyState = document.getElementById("chatEmpty");
+                if (emptyState && emptyState.parentElement) emptyState.remove();
+                // Swap the "Working…" action card for a live streaming bubble.
+                const card = pendingActionCards.shift();
+                if (card) card.remove();
+                streamingBubbleEl = document.createElement("div");
+                streamingBubbleEl.className = "chat-msg chat-msg-assistant";
+                streamingText = "";
+                chatList.appendChild(streamingBubbleEl);
+            }
+            streamingText += piece;
+            streamingBubbleEl.textContent = streamingText;
+            chatList.scrollTop = chatList.scrollHeight;
+        }
+
+        function clearStreamingBubble() {
+            if (streamingBubbleEl && streamingBubbleEl.parentElement) {
+                streamingBubbleEl.remove();
+            }
+            streamingBubbleEl = null;
+            streamingText = "";
         }
 
         function parseLoaderCheckResult(rawChunk) {
@@ -2161,8 +2420,19 @@
                     finalizeAssistant(normalized);
                 }
             }
+            if (channel === "model_registry") {
+                handleModelRegistryStream(chunk);
+            }
+            if (channel === "local_ai") {
+                const delta = parseInferenceDelta(chunk);
+                if (delta && delta.text) {
+                    appendStreamingDelta(delta.text);
+                    return;
+                }
+            }
             if (channel === "local_ai" || channel === "backend") {
                 const result = parseInferenceResult(chunk);
+                if (result) clearStreamingBubble();
                 if (result && result.ok) {
                     const outputText = `${result.output || ""}`.trim() || "Done.";
                     finalizeAssistant(outputText, result);
@@ -2746,8 +3016,45 @@
             updateComposerAction();
         }
 
-        if (composerAddBtn) {
+        // "+" is for attaching files only.
+        const composerFileInput = document.querySelector("#composerFileInput");
+        const composerAttachments = document.querySelector("#composerAttachments");
+        const attachedFiles = [];
+
+        function renderAttachments() {
+            if (!composerAttachments) return;
+            composerAttachments.innerHTML = "";
+            composerAttachments.setAttribute("aria-hidden", attachedFiles.length === 0 ? "true" : "false");
+            attachedFiles.forEach((file, idx) => {
+                const chip = document.createElement("span");
+                chip.className = "attach-chip";
+                chip.innerHTML = `<span class="attach-name"></span><button type="button" class="attach-remove" aria-label="Remove">&#10005;</button>`;
+                chip.querySelector(".attach-name").textContent = file.name;
+                chip.querySelector(".attach-remove").addEventListener("click", (e) => {
+                    e.stopPropagation();
+                    attachedFiles.splice(idx, 1);
+                    renderAttachments();
+                });
+                composerAttachments.appendChild(chip);
+            });
+        }
+
+        if (composerAddBtn && composerFileInput) {
             composerAddBtn.addEventListener("click", (event) => {
+                event.stopPropagation();
+                composerFileInput.click();
+            });
+            composerFileInput.addEventListener("change", () => {
+                Array.from(composerFileInput.files || []).forEach((f) => attachedFiles.push(f));
+                composerFileInput.value = "";
+                renderAttachments();
+            });
+        }
+
+        // The quick-action "options" menu now opens from its own button.
+        const composerOptionsBtn = document.querySelector("#composerOptionsBtn");
+        if (composerOptionsBtn) {
+            composerOptionsBtn.addEventListener("click", (event) => {
                 event.stopPropagation();
                 toggleQuickActions();
             });
@@ -2762,12 +3069,23 @@
             });
         }
 
-        if (isAppMode && composerModeBtn) {
+        // The Models drop-up is available in both the app and the assistant overlay.
+        if (composerModeBtn) {
             composerModeBtn.addEventListener("click", (event) => {
                 event.stopPropagation();
-                setInferMode(inferMode === "local" ? "cloud" : "local");
+                closeQuickActions();
+                toggleModelMenu(document.querySelector("#modelDropup"));
             });
         }
+
+        document.querySelectorAll(".model-option").forEach((opt) => {
+            opt.addEventListener("click", (event) => {
+                event.stopPropagation();
+                setInferMode(opt.dataset.modelMode);
+                if (typeof updateSidebarInferLabel === "function") updateSidebarInferLabel();
+                closeModelMenus();
+            });
+        });
 
         const settingsPanel = document.querySelector("#settingsPanel");
         const settingsList = document.querySelector("#settingsList");
@@ -2919,8 +3237,12 @@
 
         function updateSidebarInferLabel() {
             if (!sidebarInferLabel) return;
-            const modeLabel = inferMode === "local" ? "Local" : "Cloud";
-            sidebarInferLabel.innerHTML = `${modeLabel} inference<span>Tap to switch modes</span>`;
+            const modeLabel = inferMode === "local"
+                ? "Local · on-device"
+                : inferMode === "cloud"
+                    ? "Cloud · smartest"
+                    : "Auto · smart routing";
+            sidebarInferLabel.innerHTML = `Models<span>${modeLabel}</span>`;
         }
 
         function openSidebar() {
@@ -2941,6 +3263,7 @@
         function closeSidebar() {
             if (!appSidebar) return;
             if (Date.now() < sidebarIgnoreCloseUntil) return;
+            closeModelMenus();
             document.body.classList.remove("app-sidebar-open");
             appSidebar.classList.remove("is-open");
             appSidebar.setAttribute("aria-hidden", "true");
@@ -2966,7 +3289,8 @@
 
         window.__doraToggleSidebar = toggleSidebar;
 
-        setInferMode("cloud");
+        // Default to whichever model the user picked last time.
+        setInferMode(savedInferMode());
 
         if (isAppMode) {
             try {
@@ -2992,12 +3316,171 @@
             { key: "usage", title: "App usage", desc: "Your most-used apps" }
         ];
 
+        const MODEL_ROW_ICON = '<svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>';
+        function formatGb(bytes) {
+            return (bytes / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+        }
+
+        let modelCatalogContainer = null;
+        let modelCatalogEls = {};
+
+        function renderLocalModelsSection() {
+            const header = document.createElement("div");
+            header.className = "settings-subhead";
+            header.textContent = "Local models";
+            settingsList.appendChild(header);
+            modelCatalogContainer = document.createElement("div");
+            modelCatalogContainer.className = "settings-list";
+            modelCatalogContainer.innerHTML =
+                '<p class="settings-note">Checking model catalog…</p>';
+            modelCatalogEls = {};
+            settingsList.appendChild(modelCatalogContainer);
+        }
+
+        function modelRowDesc(model) {
+            const bits = [formatGb(model.total_size)];
+            if (model.params) bits.push(model.params);
+            if (model.min_ram_gb > 0) bits.push(`needs ${model.min_ram_gb} GB RAM`);
+            if (model.recommended) bits.push("Recommended for this phone");
+            else if (!model.suitable) bits.push("May be slow on this phone");
+            return bits.join(" \u00b7 ");
+        }
+
+        function renderModelCatalog(payload) {
+            if (!modelCatalogContainer) return;
+            modelCatalogContainer.innerHTML = "";
+            modelCatalogEls = {};
+            if (!payload.ok) {
+                modelCatalogContainer.innerHTML =
+                    `<p class="settings-note">${escapeHtml(payload.error || "Registry unreachable.")}</p>`;
+                return;
+            }
+            const models = payload.models || [];
+            if (models.length === 0) {
+                modelCatalogContainer.innerHTML =
+                    '<p class="settings-note">No models published yet.</p>';
+                return;
+            }
+            models.forEach((model) => {
+                const row = document.createElement("div");
+                row.className = "settings-row";
+                row.innerHTML =
+                    `<span class="sr-icon">${MODEL_ROW_ICON}</span>` +
+                    `<div class="sr-body"><div class="sr-title">${escapeHtml(model.display_name || model.id)}</div>` +
+                    `<div class="sr-desc">${escapeHtml(modelRowDesc(model))}</div></div>` +
+                    '<button class="model-dl-btn" type="button"></button>';
+                const desc = row.querySelector(".sr-desc");
+                const btn = row.querySelector(".model-dl-btn");
+                if (model.active && model.complete) {
+                    btn.textContent = "Active";
+                    btn.disabled = true;
+                    btn.classList.add("is-ready");
+                } else if (model.complete) {
+                    btn.textContent = "Use";
+                    btn.addEventListener("click", () => {
+                        btn.disabled = true;
+                        dispatchAgentAction("model.set_active", { model_id: model.id });
+                    });
+                } else if (payload.in_progress) {
+                    btn.textContent = "Waiting…";
+                    btn.disabled = true;
+                } else {
+                    btn.textContent = "Download";
+                    btn.addEventListener("click", () => {
+                        btn.disabled = true;
+                        btn.textContent = "Starting…";
+                        desc.textContent = "Starting download…";
+                        dispatchAgentAction("model.registry_download", { model_id: model.id });
+                    });
+                }
+                modelCatalogEls[model.id] = { desc, btn };
+                modelCatalogContainer.appendChild(row);
+            });
+        }
+
+        function handleModelRegistryStream(chunk) {
+            let payload = null;
+            const text = `${chunk || ""}`.trim();
+            try {
+                payload = JSON.parse(text.startsWith("status=") ? text.slice(7) : text);
+            } catch (_e) {
+                return;
+            }
+            if (text.startsWith("status=")) {
+                renderModelCatalog(payload);
+                return;
+            }
+            const els = modelCatalogEls[payload.model_id];
+            if (!els) return;
+            switch (payload.state) {
+                case "checking":
+                    els.desc.textContent = "Contacting model registry…";
+                    break;
+                case "downloading":
+                    els.desc.textContent = `Downloading ${payload.file || ""} \u00b7 ${payload.pct || 0}%`;
+                    els.btn.disabled = true;
+                    els.btn.textContent = `${payload.pct || 0}%`;
+                    break;
+                case "verifying":
+                    els.desc.textContent = "Verifying files…";
+                    break;
+                case "ready":
+                    // Re-fetch the catalog so the row flips to Use/Active.
+                    dispatchAgentAction("model.registry_status");
+                    break;
+                case "error":
+                    els.desc.textContent = payload.message || "Download failed.";
+                    els.btn.disabled = false;
+                    els.btn.textContent = "Retry";
+                    break;
+            }
+        }
+
+        function renderMemoriesSection() {
+            if (!window.AndroidBridge || typeof window.AndroidBridge.getMemories !== "function") return;
+            let facts = {};
+            try {
+                facts = JSON.parse(window.AndroidBridge.getMemories()).facts || {};
+            } catch (_e) {}
+            const header = document.createElement("div");
+            header.className = "settings-subhead";
+            header.textContent = "Memories";
+            settingsList.appendChild(header);
+            const keys = Object.keys(facts);
+            if (keys.length === 0) {
+                const empty = document.createElement("p");
+                empty.className = "settings-note";
+                empty.textContent = "Say \u201cremember \u2026\u201d in chat and saved facts will show up here.";
+                settingsList.appendChild(empty);
+                return;
+            }
+            keys.forEach((key) => {
+                const row = document.createElement("div");
+                row.className = "settings-row";
+                row.innerHTML =
+                    `<div class="sr-body"><div class="sr-title">${escapeHtml(key)}</div>` +
+                    `<div class="sr-desc">${escapeHtml(facts[key])}</div></div>` +
+                    '<button class="memory-del-btn" type="button" aria-label="Forget this memory">&#10005;</button>';
+                row.querySelector(".memory-del-btn").addEventListener("click", () => {
+                    try { window.AndroidBridge.forgetMemory(key); } catch (_e) {}
+                    row.remove();
+                });
+                settingsList.appendChild(row);
+            });
+        }
+
         function loadContextSettings() {
             if (!settingsList || !window.AndroidBridge || typeof window.AndroidBridge.getContextSettings !== "function") return;
             let data = null;
             try { data = JSON.parse(window.AndroidBridge.getContextSettings()); } catch (_e) { data = null; }
             const sources = (data && data.sources) || {};
             settingsList.innerHTML = "";
+            renderLocalModelsSection();
+            dispatchAgentAction("model.registry_status");
+            const sourcesHeader = document.createElement("div");
+            sourcesHeader.className = "settings-subhead";
+            sourcesHeader.textContent = "Context sources";
+            settingsList.appendChild(sourcesHeader);
             CONTEXT_SOURCES.forEach((src) => {
                 const st = sources[src.key] || { enabled: false, granted: false };
                 const needsPerm = st.enabled && !st.granted;
@@ -3019,6 +3502,7 @@
                 });
                 settingsList.appendChild(row);
             });
+            renderMemoriesSection();
         }
 
         function openSettingsPanel() {
@@ -3064,9 +3548,9 @@
             });
         }
         if (sidebarInferBtn) {
-            sidebarInferBtn.addEventListener("click", () => {
-                setInferMode(inferMode === "local" ? "cloud" : "local");
-                updateSidebarInferLabel();
+            sidebarInferBtn.addEventListener("click", (event) => {
+                event.stopPropagation();
+                toggleModelMenu(document.querySelector("#sidebarModelMenu"));
             });
         }
 
@@ -3118,9 +3602,15 @@
             rootEl.addEventListener("click", (event) => {
                 if (quickActions && quickActions.classList.contains("is-open") &&
                     !quickActions.contains(event.target) &&
-                    !event.target.closest("#composerAddBtn")
+                    !event.target.closest("#composerOptionsBtn")
                 ) {
                     closeQuickActions();
+                }
+                if (!event.target.closest(".model-dropup") &&
+                    !event.target.closest("#composerModeBtn") &&
+                    !event.target.closest("#sidebarInferBtn")
+                ) {
+                    closeModelMenus();
                 }
                 if (isAppMode) {
                     if (document.body.classList.contains("app-sidebar-open") &&
