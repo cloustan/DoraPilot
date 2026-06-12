@@ -14,7 +14,9 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import com.dorapilot.ContextSheet
 import com.dorapilot.R
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
 import java.util.concurrent.Executors
@@ -22,12 +24,14 @@ import java.util.concurrent.Executors
 /**
  * Native Android selected-text actions for the long-press text menu.
  *
- * Apps that support ACTION_PROCESS_TEXT show these activities beside Copy/Paste.
- * Editable fields can receive replacement text via EXTRA_PROCESS_TEXT result;
- * read-only selections stay safe by showing and copying the result instead.
+ * Apps that support ACTION_PROCESS_TEXT show a single "Dora" entry beside
+ * Copy/Paste; tapping it opens the Material bottom sheet with one tile per
+ * action. Editable fields can receive replacement text via EXTRA_PROCESS_TEXT
+ * result; read-only selections stay safe by showing and copying the result.
  */
 open class ProcessTextActivity : Activity() {
-    protected open val doraAction: DoraTextAction = DoraTextAction.SUMMARIZE
+    /** Preset action for subclasses; null shows the action chooser sheet. */
+    protected open val doraAction: DoraTextAction? = null
 
     private val executor = Executors.newSingleThreadExecutor()
     private val backendClient = MainBackendClient()
@@ -48,10 +52,11 @@ open class ProcessTextActivity : Activity() {
     private var selectedText: String = ""
     private var readOnly: Boolean = true
     private var latestOutput: String = ""
+    private var activeAction: DoraTextAction = DoraTextAction.SUMMARIZE
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        title = getString(doraAction.titleRes)
+        title = getString(doraAction?.titleRes ?: R.string.process_text_dora)
         selectedText = intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString().orEmpty()
         readOnly = intent.getBooleanExtra(Intent.EXTRA_PROCESS_TEXT_READONLY, true)
 
@@ -65,10 +70,43 @@ open class ProcessTextActivity : Activity() {
             return
         }
 
-        statusText.text = "Dora is working…"
         bodyText.text = selectedText.take(600)
+        val preset = doraAction
+        if (preset != null) {
+            startAction(preset)
+        } else {
+            showActionChooser()
+        }
+    }
+
+    /** One tile per Dora action; picking one runs it, dismissing cancels. */
+    private fun showActionChooser() {
+        statusText.text = "Choose a Dora action"
+        val items = JSONArray()
+        DoraTextAction.entries.forEach { action ->
+            items.put(
+                JSONObject()
+                    .put("id", action.name)
+                    .put("title", getString(action.titleRes).removePrefix("Dora "))
+                    .put("subtitle", action.subtitle)
+            )
+        }
+        ContextSheet.show(this, "Dora", items.toString(), onCancel = { finish() }) { id ->
+            val action = DoraTextAction.entries.firstOrNull { it.name == id }
+            if (action == null) {
+                finish()
+            } else {
+                startAction(action)
+            }
+        }
+    }
+
+    private fun startAction(action: DoraTextAction) {
+        activeAction = action
+        title = getString(action.titleRes)
+        statusText.text = "Dora is working…"
         executor.execute {
-            val result = runCatching { runSelectedTextAction(selectedText) }.getOrElse { error ->
+            val result = runCatching { runSelectedTextAction(action, selectedText) }.getOrElse { error ->
                 JSONObject()
                     .put("ok", false)
                     .put("output", error.message ?: "Dora text action failed.")
@@ -76,7 +114,7 @@ open class ProcessTextActivity : Activity() {
             val ok = result.optBoolean("ok", false)
             val output = result.optString("output", result.optString("error", "")).trim()
             runOnUiThread {
-                if (ok && output.isNotBlank() && !readOnly && doraAction.returnsReplacement) {
+                if (ok && output.isNotBlank() && !readOnly && action.returnsReplacement) {
                     returnReplacement(output)
                 } else {
                     showFinal(
@@ -97,8 +135,8 @@ open class ProcessTextActivity : Activity() {
         executor.shutdownNow()
     }
 
-    private fun runSelectedTextAction(text: String): JSONObject {
-        return when (doraAction) {
+    private fun runSelectedTextAction(action: DoraTextAction, text: String): JSONObject {
+        return when (action) {
             DoraTextAction.SUMMARIZE -> textIntelligence.transform(TextIntelligenceServer.Mode.SUMMARIZE, text)
             DoraTextAction.KEY_POINTS -> textIntelligence.transform(TextIntelligenceServer.Mode.KEY_POINTS, text)
             DoraTextAction.PROOFREAD -> textIntelligence.transform(TextIntelligenceServer.Mode.PROOFREAD, text)
@@ -126,7 +164,7 @@ open class ProcessTextActivity : Activity() {
         statusText.setTextColor(if (ok) Color.rgb(22, 101, 52) else Color.rgb(185, 28, 28))
         bodyText.text = output.ifBlank { selectedText }
         copyButton.visibility = if (output.isNotBlank()) View.VISIBLE else View.GONE
-        replaceButton.visibility = if (!readOnly && output.isNotBlank() && doraAction.returnsReplacement) {
+        replaceButton.visibility = if (!readOnly && output.isNotBlank() && activeAction.returnsReplacement) {
             View.VISIBLE
         } else {
             View.GONE
@@ -143,7 +181,7 @@ open class ProcessTextActivity : Activity() {
         statusText = TextView(this).apply {
             textSize = 18f
             setTextColor(Color.rgb(22, 35, 63))
-            text = getString(doraAction.titleRes)
+            text = getString(doraAction?.titleRes ?: R.string.process_text_dora)
             setPadding(0, 0, 0, 14)
         }
         root.addView(statusText, LinearLayout.LayoutParams(-1, -2))
@@ -193,33 +231,14 @@ open class ProcessTextActivity : Activity() {
     }
 }
 
-class ProcessTextSummarizeActivity : ProcessTextActivity() {
-    override val doraAction: DoraTextAction = DoraTextAction.SUMMARIZE
-}
-
-class ProcessTextProofreadActivity : ProcessTextActivity() {
-    override val doraAction: DoraTextAction = DoraTextAction.PROOFREAD
-}
-
-class ProcessTextTranslateActivity : ProcessTextActivity() {
-    override val doraAction: DoraTextAction = DoraTextAction.TRANSLATE
-}
-
-class ProcessTextKeyPointsActivity : ProcessTextActivity() {
-    override val doraAction: DoraTextAction = DoraTextAction.KEY_POINTS
-}
-
-class ProcessTextReplyCoachActivity : ProcessTextActivity() {
-    override val doraAction: DoraTextAction = DoraTextAction.REPLY_COACH
-}
-
 enum class DoraTextAction(
     val titleRes: Int,
-    val returnsReplacement: Boolean
+    val returnsReplacement: Boolean,
+    val subtitle: String
 ) {
-    SUMMARIZE(R.string.process_text_summarize, true),
-    PROOFREAD(R.string.process_text_proofread, true),
-    TRANSLATE(R.string.process_text_translate, true),
-    KEY_POINTS(R.string.process_text_key_points, true),
-    REPLY_COACH(R.string.process_text_reply_coach, true)
+    SUMMARIZE(R.string.process_text_summarize, true, "Condense the selection"),
+    PROOFREAD(R.string.process_text_proofread, true, "Fix grammar and clarity"),
+    TRANSLATE(R.string.process_text_translate, true, "Translate to your language"),
+    KEY_POINTS(R.string.process_text_key_points, true, "Bullet the main ideas"),
+    REPLY_COACH(R.string.process_text_reply_coach, true, "Draft a reply")
 }

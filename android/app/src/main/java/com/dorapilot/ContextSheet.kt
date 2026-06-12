@@ -23,7 +23,13 @@ import org.json.JSONObject
  */
 object ContextSheet {
 
-    fun show(activity: Activity, title: String, itemsJson: String, onPick: (String) -> Unit) {
+    fun show(
+        activity: Activity,
+        title: String,
+        itemsJson: String,
+        onCancel: (() -> Unit)? = null,
+        onPick: (String) -> Unit
+    ) {
         val items = runCatching { JSONArray(itemsJson) }.getOrNull() ?: return
         val dp = activity.resources.displayMetrics.density
         fun px(v: Int) = (v * dp).toInt()
@@ -54,12 +60,14 @@ object ContextSheet {
         }
 
         val dialog = BottomSheetDialog(activity)
+        var picked = false
 
         for (i in 0 until items.length()) {
             val item = items.optJSONObject(i) ?: continue
             val id = item.optString("id")
             if (id.isBlank()) continue
             root.addView(buildTile(activity, item, ::px) {
+                picked = true
                 dialog.dismiss()
                 onPick(id)
             })
@@ -68,6 +76,7 @@ object ContextSheet {
         dialog.setContentView(root)
         // Let the gradient run to the sheet edges.
         (root.parent as? View)?.setBackgroundColor(Color.TRANSPARENT)
+        dialog.setOnDismissListener { if (!picked) onCancel?.invoke() }
         dialog.show()
     }
 

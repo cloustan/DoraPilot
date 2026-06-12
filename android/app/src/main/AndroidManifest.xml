@@ -51,58 +51,11 @@
             </intent-filter>
         </activity>
 
-        <!-- Native long-press selected-text actions (Android Process Text). -->
+        <!-- Native long-press selected-text action (Android Process Text):
+             one "Dora" entry that opens a bottom sheet with one tile per action. -->
         <activity
-            android:name=".assistant.ProcessTextSummarizeActivity"
-            android:label="@string/process_text_summarize"
-            android:excludeFromRecents="true"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.PROCESS_TEXT" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
-            </intent-filter>
-        </activity>
-
-        <activity
-            android:name=".assistant.ProcessTextProofreadActivity"
-            android:label="@string/process_text_proofread"
-            android:excludeFromRecents="true"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.PROCESS_TEXT" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
-            </intent-filter>
-        </activity>
-
-        <activity
-            android:name=".assistant.ProcessTextTranslateActivity"
-            android:label="@string/process_text_translate"
-            android:excludeFromRecents="true"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.PROCESS_TEXT" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
-            </intent-filter>
-        </activity>
-
-        <activity
-            android:name=".assistant.ProcessTextKeyPointsActivity"
-            android:label="@string/process_text_key_points"
-            android:excludeFromRecents="true"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.PROCESS_TEXT" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="text/plain" />
-            </intent-filter>
-        </activity>
-
-        <activity
-            android:name=".assistant.ProcessTextReplyCoachActivity"
-            android:label="@string/process_text_reply_coach"
+            android:name=".assistant.ProcessTextActivity"
+            android:label="@string/process_text_dora"
             android:excludeFromRecents="true"
             android:exported="true">
             <intent-filter>

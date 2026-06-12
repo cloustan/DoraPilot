@@ -6,6 +6,7 @@
     <string name="service_channel_description">Keeps Dora Pilot assistant ready for instant launch.</string>
     <string name="service_notification_title">Dora Pilot is running</string>
     <string name="service_notification_text">Assistant service is active and ready.</string>
+    <string name="process_text_dora">Dora</string>
     <string name="process_text_summarize">Dora Summarize</string>
     <string name="process_text_proofread">Dora Proofread</string>
     <string name="process_text_translate">Dora Translate</string>
