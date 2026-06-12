@@ -143,6 +143,11 @@
             </intent-filter>
         </service>
 
+        <!-- Inline "Ask Dora" reply action on AI summary notifications. -->
+        <receiver
+            android:name=".assistant.NotificationAskReceiver"
+            android:exported="false" />
+
         <receiver
             android:name=".assistant.ServiceRestartReceiver"
             android:enabled="true"

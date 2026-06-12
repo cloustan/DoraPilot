@@ -30,6 +30,9 @@ object NotificationSummarizer {
     private const val NOTIFICATION_BASE = 49_000
     private const val PROGRESS_BASE = 50_000
 
+    /** RemoteInput key for the inline "Ask Dora" reply on summary notifications. */
+    const val KEY_ASK = "dora_ask_input"
+
     fun isEnabled(context: Context): Boolean =
         ContextSourcesConfig(context).isEnabled(ContextSourcesConfig.SUMMARIES)
 
@@ -104,7 +107,7 @@ object NotificationSummarizer {
                 // Echo guard: small models sometimes parrot the prompt or copy the
                 // input instead of condensing. Keep the original in that case.
                 if (looksLikeEcho(summary, text)) return@execute
-                postSummary(context, id, pkg, label, summary)
+                postSummary(context, id, pkg, label, summary, sourceText = text)
                 onReplace?.let { runCatching { it() } }
             }.onFailure {
                 cancelWorking(context, id)
@@ -165,46 +168,125 @@ object NotificationSummarizer {
         nm.cancel(PROGRESS_BASE + (id and 0xFFFF))
     }
 
-    private fun postSummary(context: Context, id: Int, pkg: String, title: String, summary: String) {
-        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            nm.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Message summaries", NotificationManager.IMPORTANCE_DEFAULT)
-            )
-        }
-        // Tap opens the originating app.
-        val launch = runCatching { context.packageManager.getLaunchIntentForPackage(pkg) }.getOrNull()
-            ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        val contentIntent = launch?.let {
-            PendingIntent.getActivity(
-                context, id, it,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-        }
-        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            android.app.Notification.Builder(context, CHANNEL_ID)
-        } else {
-            @Suppress("DEPRECATION") android.app.Notification.Builder(context)
-        }
-        builder.setSmallIcon(com.dorapilot.R.drawable.ic_stat_dora)
-            .setContentTitle(title)
+    private fun postSummary(
+        context: Context,
+        id: Int,
+        pkg: String,
+        title: String,
+        summary: String,
+        sourceText: String
+    ) {
+        val notifId = NOTIFICATION_BASE + (id and 0xFFFF)
+        val builder = baseSummaryBuilder(context, pkg, title)
             .setContentText(summary)
-            // Liability marker: shown in the header (collapsed) and as the
-            // footer of the expanded view.
-            .setSubText("AI generated")
             .setStyle(
                 android.app.Notification.BigTextStyle()
                     .bigText(summary)
                     .setSummaryText("AI-generated summary \u00b7 may contain mistakes")
             )
+        builder.addAction(buildAskAction(context, notifId, pkg, title, sourceText, summary))
+        notify(context, notifId, builder)
+    }
+
+    /** "Thinking" state shown immediately after the user submits an inline question. */
+    fun postThinking(context: Context, notifId: Int, pkg: String, title: String, question: String) {
+        val builder = baseSummaryBuilder(context, pkg, title)
+            .setContentText("Thinking about: $question")
+            .setStyle(android.app.Notification.BigTextStyle().bigText("Q: $question\n\nThinking\u2026"))
+            .setProgress(0, 0, true)
+        notify(context, notifId, builder)
+    }
+
+    /** Final Q&A state, keeping an Ask action for follow-up questions. */
+    fun postAnswer(
+        context: Context,
+        notifId: Int,
+        pkg: String,
+        title: String,
+        question: String,
+        answer: String,
+        sourceText: String
+    ) {
+        val builder = baseSummaryBuilder(context, pkg, title)
+            .setContentText(answer)
+            .setStyle(
+                android.app.Notification.BigTextStyle()
+                    .bigText("Q: $question\n\nA: $answer")
+                    .setSummaryText("AI-generated answer \u00b7 may contain mistakes")
+            )
+        builder.addAction(buildAskAction(context, notifId, pkg, title, sourceText, answer))
+        notify(context, notifId, builder)
+    }
+
+    private fun baseSummaryBuilder(
+        context: Context,
+        pkg: String,
+        title: String
+    ): android.app.Notification.Builder {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        nm?.createNotificationChannel(
+            NotificationChannel(CHANNEL_ID, "Message summaries", NotificationManager.IMPORTANCE_DEFAULT)
+        )
+        val builder = android.app.Notification.Builder(context, CHANNEL_ID)
+            .setSmallIcon(com.dorapilot.R.drawable.ic_stat_dora)
+            .setContentTitle(title)
+            // Liability marker: shown in the header (collapsed view).
+            .setSubText("AI generated")
             .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
         // Lead with the source app's icon so the summary reads as belonging to
         // the conversation, not to Dora.
         appIconBitmap(context, pkg)?.let {
             builder.setLargeIcon(android.graphics.drawable.Icon.createWithBitmap(it))
         }
-        if (contentIntent != null) builder.setContentIntent(contentIntent)
-        nm.notify(NOTIFICATION_BASE + (id and 0xFFFF), builder.build())
+        // Tap opens the originating app.
+        runCatching { context.packageManager.getLaunchIntentForPackage(pkg) }.getOrNull()
+            ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            ?.let { launch ->
+                builder.setContentIntent(
+                    PendingIntent.getActivity(
+                        context, NOTIFICATION_BASE + 1, launch,
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                    )
+                )
+            }
+        return builder
+    }
+
+    /** Inline "Ask Dora" reply action (direct-reply RemoteInput). */
+    private fun buildAskAction(
+        context: Context,
+        notifId: Int,
+        pkg: String,
+        title: String,
+        sourceText: String,
+        lastSummary: String
+    ): android.app.Notification.Action {
+        val intent = Intent(context, NotificationAskReceiver::class.java)
+            .setAction(NotificationAskReceiver.ACTION_ASK)
+            .putExtra(NotificationAskReceiver.EXTRA_NOTIF_ID, notifId)
+            .putExtra(NotificationAskReceiver.EXTRA_PKG, pkg)
+            .putExtra(NotificationAskReceiver.EXTRA_LABEL, title)
+            .putExtra(NotificationAskReceiver.EXTRA_BODY, sourceText.take(1600))
+            .putExtra(NotificationAskReceiver.EXTRA_SUMMARY, lastSummary.take(400))
+        // MUTABLE is required for the system to attach RemoteInput results.
+        val pending = PendingIntent.getBroadcast(
+            context, notifId, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+        )
+        val remoteInput = android.app.RemoteInput.Builder(KEY_ASK)
+            .setLabel("Ask Dora about this")
+            .build()
+        return android.app.Notification.Action.Builder(
+            android.graphics.drawable.Icon.createWithResource(context, com.dorapilot.R.drawable.ic_stat_dora),
+            "Ask Dora",
+            pending
+        ).addRemoteInput(remoteInput).build()
+    }
+
+    private fun notify(context: Context, notifId: Int, builder: android.app.Notification.Builder) {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+        nm.notify(notifId, builder.build())
     }
 
     /** Source app icon rendered to a bitmap for use as the large icon. */
