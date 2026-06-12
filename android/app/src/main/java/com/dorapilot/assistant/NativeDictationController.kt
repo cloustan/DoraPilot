@@ -5,6 +5,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioManager
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.speech.RecognitionListener
@@ -32,57 +35,114 @@ class NativeDictationController(
                 emitError("Microphone permission is required for dictation.")
                 return@post
             }
-            if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+            val onDeviceSupported = isOnDeviceRecognitionSupported()
+            if (!SpeechRecognizer.isRecognitionAvailable(context) && !onDeviceSupported) {
                 emitError("Speech recognition is not available on this device.")
                 return@post
             }
-
-            destroy()
-            muteRecognizerSounds()
-            val recognizer = SpeechRecognizer.createSpeechRecognizer(context)
-            speechRecognizer = recognizer
-            recognizer.setRecognitionListener(object : RecognitionListener {
-                override fun onReadyForSpeech(params: Bundle?) {
-                    emitStatus("Dictation ready.")
-                    evaluateJavascript("window.onDictationState && window.onDictationState('ready');")
-                }
-
-                override fun onBeginningOfSpeech() {
-                    evaluateJavascript("window.onDictationState && window.onDictationState('listening');")
-                }
-
-                override fun onRmsChanged(rmsdB: Float) = Unit
-                override fun onBufferReceived(buffer: ByteArray?) = Unit
-                override fun onEndOfSpeech() {
-                    evaluateJavascript("window.onDictationState && window.onDictationState('processing');")
-                }
-
-                override fun onError(error: Int) {
-                    destroy()
-                    emitError("Dictation failed ($error).")
-                }
-
-                override fun onResults(results: Bundle?) {
-                    val text = bestResult(results)
-                    destroy()
-                    emitText(text, isFinal = true)
-                }
-
-                override fun onPartialResults(partialResults: Bundle?) {
-                    emitText(bestResult(partialResults), isFinal = false)
-                }
-
-                override fun onEvent(eventType: Int, params: Bundle?) = Unit
-            })
-
-            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-            }
-            recognizer.startListening(intent)
-            evaluateJavascript("window.onDictationState && window.onDictationState('listening');")
+            // Offline: go straight to the on-device recognizer so listening
+            // doesn't fail with a network error.
+            val offline = !isNetworkAvailable()
+            startListening(
+                useOnDevice = offline && onDeviceSupported,
+                preferOffline = offline,
+                allowOnDeviceFallback = true
+            )
         }
+    }
+
+    private fun startListening(
+        useOnDevice: Boolean,
+        preferOffline: Boolean,
+        allowOnDeviceFallback: Boolean
+    ) {
+        destroy()
+        muteRecognizerSounds()
+        val recognizer = if (useOnDevice && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+        } else {
+            SpeechRecognizer.createSpeechRecognizer(context)
+        }
+        speechRecognizer = recognizer
+        recognizer.setRecognitionListener(object : RecognitionListener {
+            override fun onReadyForSpeech(params: Bundle?) {
+                emitStatus("Dictation ready.")
+                evaluateJavascript("window.onDictationState && window.onDictationState('ready');")
+            }
+
+            override fun onBeginningOfSpeech() {
+                evaluateJavascript("window.onDictationState && window.onDictationState('listening');")
+            }
+
+            override fun onRmsChanged(rmsdB: Float) = Unit
+            override fun onBufferReceived(buffer: ByteArray?) = Unit
+            override fun onEndOfSpeech() {
+                evaluateJavascript("window.onDictationState && window.onDictationState('processing');")
+            }
+
+            override fun onError(error: Int) {
+                destroy()
+                // Network-class failure on the default recognizer: retry once
+                // with the on-device recognizer instead of surfacing an error.
+                if (allowOnDeviceFallback && !useOnDevice &&
+                    error in NETWORK_ERROR_CODES && isOnDeviceRecognitionSupported()
+                ) {
+                    emitStatus("Network speech recognition failed; retrying on-device.")
+                    startListening(useOnDevice = true, preferOffline = true, allowOnDeviceFallback = false)
+                    return
+                }
+                emitError(describeRecognizerError(error))
+            }
+
+            override fun onResults(results: Bundle?) {
+                val text = bestResult(results)
+                destroy()
+                emitText(text, isFinal = true)
+            }
+
+            override fun onPartialResults(partialResults: Bundle?) {
+                emitText(bestResult(partialResults), isFinal = false)
+            }
+
+            override fun onEvent(eventType: Int, params: Bundle?) = Unit
+        })
+
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+            if (preferOffline) {
+                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+            }
+        }
+        recognizer.startListening(intent)
+        evaluateJavascript("window.onDictationState && window.onDictationState('listening');")
+    }
+
+    private fun isOnDeviceRecognitionSupported(): Boolean {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            runCatching { SpeechRecognizer.isOnDeviceRecognitionAvailable(context) }.getOrDefault(false)
+    }
+
+    private fun isNetworkAvailable(): Boolean {
+        return runCatching {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+            val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        }.getOrDefault(false)
+    }
+
+    private fun describeRecognizerError(error: Int): String = when (error) {
+        SpeechRecognizer.ERROR_NETWORK_TIMEOUT,
+        SpeechRecognizer.ERROR_NETWORK ->
+            "No internet for speech recognition, and on-device recognition isn't available."
+        SpeechRecognizer.ERROR_AUDIO -> "Microphone audio error."
+        SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "Didn't hear anything."
+        SpeechRecognizer.ERROR_NO_MATCH -> "Didn't catch that."
+        SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Speech recognizer is busy. Try again."
+        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Microphone permission is required for dictation."
+        else -> "Dictation failed ($error)."
     }
 
     fun stop() {
@@ -165,5 +225,14 @@ class NativeDictationController(
 
     private companion object {
         const val RESTORE_DELAY_MS = 600L
+
+        // ERROR_NETWORK_TIMEOUT, ERROR_NETWORK, ERROR_SERVER, ERROR_SERVER_DISCONNECTED
+        // (the last is API 31+, so use the raw value).
+        val NETWORK_ERROR_CODES = setOf(
+            SpeechRecognizer.ERROR_NETWORK_TIMEOUT,
+            SpeechRecognizer.ERROR_NETWORK,
+            SpeechRecognizer.ERROR_SERVER,
+            11
+        )
     }
 }
