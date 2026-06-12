@@ -16,7 +16,8 @@ data class BackendConfig(
     val localGenAiModelAssetDir: String,
     val localGenAiModelFilesDir: String,
     val localGenAiMaxTokens: Int,
-    val localGenAiTemperature: Float
+    val localGenAiTemperature: Float,
+    val modelRegistryEndpoint: String
 ) {
     companion object {
         fun load(): BackendConfig {
@@ -37,7 +38,8 @@ data class BackendConfig(
                 localGenAiModelAssetDir = BuildConfig.DORA_LOCAL_GENAI_MODEL_ASSET_DIR,
                 localGenAiModelFilesDir = BuildConfig.DORA_LOCAL_GENAI_MODEL_FILES_DIR,
                 localGenAiMaxTokens = BuildConfig.DORA_LOCAL_GENAI_MAX_TOKENS,
-                localGenAiTemperature = BuildConfig.DORA_LOCAL_GENAI_TEMPERATURE
+                localGenAiTemperature = BuildConfig.DORA_LOCAL_GENAI_TEMPERATURE,
+                modelRegistryEndpoint = BuildConfig.DORA_MODEL_REGISTRY_ENDPOINT
             )
         }
     }

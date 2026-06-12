@@ -11,6 +11,10 @@ class LocalOnnxRuntimeEngine(
     private val context: Context,
     private val config: BackendConfig
 ) {
+    private companion object {
+        const val MAX_HISTORY_TURNS = 12
+    }
+
     @Volatile
     private var session: Any? = null
     private val lock = Any()
@@ -110,7 +114,7 @@ class LocalOnnxRuntimeEngine(
         return result
     }
 
-    fun infer(payload: JSONObject): JSONObject {
+    fun infer(payload: JSONObject, onToken: ((String) -> Unit)? = null): JSONObject {
         if (!config.localAiEnabled) {
             val message = "Local AI is disabled. Set DORA_LOCAL_AI_ENABLED=true."
             return JSONObject()
@@ -123,7 +127,7 @@ class LocalOnnxRuntimeEngine(
         if (prompt.isNotBlank() &&
             (config.localGenAiModelFilesDir.isNotBlank() || config.localGenAiModelAssetDir.isNotBlank())
         ) {
-            return inferGenAi(prompt, payload)
+            return inferGenAi(prompt, payload, onToken)
         }
 
         if (config.localOnnxModelAsset.isBlank()) {
@@ -197,7 +201,11 @@ class LocalOnnxRuntimeEngine(
         }
     }
 
-    private fun inferGenAi(prompt: String, payload: JSONObject): JSONObject {
+    private fun inferGenAi(
+        prompt: String,
+        payload: JSONObject,
+        onToken: ((String) -> Unit)? = null
+    ): JSONObject {
         var stage = "starting"
         return runCatching {
             stage = "loading model"
@@ -231,9 +239,30 @@ class LocalOnnxRuntimeEngine(
                 val generator = state.generatorClass
                     .getConstructor(state.modelClass, state.paramsClass)
                     .newInstance(state.model, params)
+                var tokenizerStream: Any? = null
                 try {
                     stage = "appending prompt"
                     appendGeneratorInput(state.generatorClass, generator, encodedPrompt)
+
+                    // Incremental decoding for token streaming. All optional: if
+                    // the runtime lacks TokenizerStream we fall back to a single
+                    // final result with no partial updates.
+                    tokenizerStream = if (onToken != null) {
+                        runCatching {
+                            state.tokenizerClass.getMethod("createStream").invoke(state.tokenizer)
+                        }.getOrNull()
+                    } else null
+                    val lastTokenMethod = tokenizerStream?.let {
+                        runCatching {
+                            state.generatorClass.getMethod("getLastTokenInSequence", java.lang.Long.TYPE)
+                        }.getOrNull()
+                    }
+                    val streamDecodeMethod = tokenizerStream?.let { stream ->
+                        runCatching {
+                            stream.javaClass.getMethod("decode", Integer.TYPE)
+                        }.getOrNull()
+                    }
+
                     var generatedTokens = 0
                     stage = "generating token"
                     while (!isGeneratorDone(state.generatorClass, generator) && generatedTokens < maxTokens) {
@@ -245,6 +274,18 @@ class LocalOnnxRuntimeEngine(
                             emptyArray()
                         )
                         generatedTokens += 1
+                        if (onToken != null && lastTokenMethod != null && streamDecodeMethod != null) {
+                            runCatching {
+                                val token = lastTokenMethod.invoke(generator, 0L) as? Int
+                                if (token != null) {
+                                    val piece = streamDecodeMethod
+                                        .invoke(tokenizerStream, token)
+                                        ?.toString()
+                                        .orEmpty()
+                                    if (piece.isNotEmpty()) onToken(piece)
+                                }
+                            }
+                        }
                     }
 
                     stage = "reading generated sequence"
@@ -263,8 +304,9 @@ class LocalOnnxRuntimeEngine(
                     } else {
                         generated
                     }
-                    val text = decodeGenerated(state.tokenizerClass, state.tokenizer, newTokensOnly)
-                        .trim()
+                    val text = sanitizeGenAiOutput(
+                        decodeGenerated(state.tokenizerClass, state.tokenizer, newTokensOnly)
+                    )
                     JSONObject()
                         .put("ok", true)
                         .put("mode", "genai")
@@ -275,6 +317,7 @@ class LocalOnnxRuntimeEngine(
                         .put("max_length", maxLength)
                         .put("temperature", temperature)
                 } finally {
+                    closeQuietly(tokenizerStream)
                     closeQuietly(generator)
                     closeQuietly(encodedPrompt)
                 }
@@ -294,16 +337,55 @@ class LocalOnnxRuntimeEngine(
     }
 
     /**
+     * The Dora Pilot Flash fine-tune (Qwen3 base) leaks training artifacts
+     * into replies: <think> reasoning blocks (sometimes left unclosed, with
+     * the real answer inside) and a "[Dora Pilot Flash]:" self-prefix. Strip
+     * both so callers only ever see the answer text.
+     */
+    private fun sanitizeGenAiOutput(raw: String): String {
+        var text = raw
+        // Drop closed reasoning blocks entirely; for a dangling <think> keep
+        // the content after the tag, which is usually the actual reply.
+        text = text.replace(Regex("(?s)<think>.*?</think>"), "")
+        text = text.replace("<think>", "").replace("</think>", "")
+        text = text.trim()
+        text = text.replace(
+            Regex("^\\[?dora pilot flash]?\\s*:\\s*", RegexOption.IGNORE_CASE),
+            ""
+        )
+        return text.trim()
+    }
+
+    /**
      * Wrap the user prompt in the ChatML format used by Qwen-family instruct
      * models. Without this, the model does raw text continuation and emits
      * unrelated completions instead of answering.
+     *
+     * Mirrors the cloud request shape: optional "system" string and optional
+     * "history" array of {role, content} turns (the trailing duplicate of the
+     * current prompt, if present, is skipped).
      */
     private fun buildChatMlPrompt(prompt: String, payload: JSONObject): String {
-        val system = payload.optString("system", "You are Dora, a concise on-device assistant.")
+        val system = payload.optString("system", "").trim()
+            .ifBlank { "You are Dora, a concise on-device assistant." }
+        val history = payload.optJSONArray("history") ?: JSONArray()
         return buildString {
             append("<|im_start|>system\n")
             append(system)
             append("<|im_end|>\n")
+            val start = maxOf(0, history.length() - MAX_HISTORY_TURNS)
+            for (i in start until history.length()) {
+                val item = history.optJSONObject(i) ?: continue
+                val role = item.optString("role", "").trim()
+                val content = item.optString("content", "").trim()
+                if (content.isEmpty() || (role != "user" && role != "assistant")) continue
+                if (i == history.length() - 1 && role == "user" && content == prompt) continue
+                append("<|im_start|>")
+                append(role)
+                append("\n")
+                append(content.take(2000))
+                append("<|im_end|>\n")
+            }
             append("<|im_start|>user\n")
             append(prompt)
             append("<|im_end|>\n")
@@ -580,12 +662,25 @@ class LocalOnnxRuntimeEngine(
         }
 
         throw IllegalStateException(
-            "Local GenAI model directory not found. Expected files under '${config.localGenAiModelFilesDir}'."
+            "Local GenAI model directory not found. Expected files under '${activeModelFilesDir()}'."
         )
     }
 
+    /** Drop cached model/tokenizer so the next request loads the active model. */
+    fun resetGenAiRuntime() {
+        synchronized(lock) {
+            closeQuietly(genAiTokenizer)
+            closeQuietly(genAiModel)
+            genAiModel = null
+            genAiTokenizer = null
+        }
+    }
+
+    private fun activeModelFilesDir(): String =
+        LocalModelSelection.activeDir(context, config.localGenAiModelFilesDir)
+
     private fun configuredModelDirCandidates(): List<File> {
-        val rawPath = config.localGenAiModelFilesDir.trim()
+        val rawPath = activeModelFilesDir().trim()
         if (rawPath.isBlank()) return emptyList()
 
         val configured = File(rawPath)

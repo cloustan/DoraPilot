@@ -1,0 +1,24 @@
+{
+    "name": "dora-pilot-model-registry",
+    "main": "src/index.js",
+    "compatibility_date": "2026-06-01",
+    // Keep workers.dev alive for app builds that predate the custom domain.
+    "workers_dev": true,
+    "r2_buckets": [
+        {
+            "binding": "MODELS",
+            "bucket_name": "dora-pilot-models"
+        }
+    ],
+    "routes": [
+        {
+            "pattern": "ai.api.pilot.dora.model-registry-v1.cloustan.org",
+            "custom_domain": true
+        }
+    ],
+    // ADMIN_TOKEN is a Secret (wrangler secret put ADMIN_TOKEN); required for
+    // the /v1/admin/* multipart upload endpoints used to publish models.
+    "observability": {
+        "enabled": false
+    }
+}

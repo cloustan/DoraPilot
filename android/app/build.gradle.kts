@@ -114,6 +114,11 @@ android {
             quoted(configValue("DORA_LOCAL_GENAI_MODEL_FILES_DIR", "models/qwen2.5-coder-1.5b-instruct-onnx-genai-int4"))
         )
         buildConfigField(
+            "String",
+            "DORA_MODEL_REGISTRY_ENDPOINT",
+            quoted(configValue("DORA_MODEL_REGISTRY_ENDPOINT", "https://ai.api.pilot.dora.model-registry-v1.cloustan.org"))
+        )
+        buildConfigField(
             "int",
             "DORA_LOCAL_GENAI_MAX_TOKENS",
             configValue("DORA_LOCAL_GENAI_MAX_TOKENS", "256")
