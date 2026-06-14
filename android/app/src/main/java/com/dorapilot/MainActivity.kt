@@ -197,6 +197,10 @@ class MainActivity : AppCompatActivity() {
         return if (contextSummary.isBlank()) baseSystem else "$baseSystem\n\n$contextSummary"
     }
 
+    private fun shouldAutoPreferLocal(): Boolean {
+        return backendConfig.apiKey.isBlank() && localOnnxRuntimeEngine.isConfigured()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -573,7 +577,7 @@ class MainActivity : AppCompatActivity() {
                         // configured backend model.
                         "cloud" -> runPureCloudInference(payload, prompt)
                         // Auto: instant device router first, then inference with
-                        // the local model when one is configured, cloud otherwise.
+                        // cloud when configured, local otherwise.
                         else -> {
                             val deviceResult = deviceCommandRouter.tryHandle(prompt)
                             if (deviceResult != null) {
@@ -583,7 +587,7 @@ class MainActivity : AppCompatActivity() {
                                 emitTerminalStream("backend", "inference result=$deviceResult")
                                 return@execute
                             }
-                            if (localOnnxRuntimeEngine.isConfigured()) {
+                            if (shouldAutoPreferLocal()) {
                                 runPureLocalInference(payload, prompt)
                             } else {
                                 runPureCloudInference(payload, prompt)
