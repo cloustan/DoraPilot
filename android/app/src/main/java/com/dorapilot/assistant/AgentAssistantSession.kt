@@ -359,13 +359,13 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
                             "cloud" -> runPureCloudInference(payload, prompt)
                             // Auto is the smart router: deterministic control first,
                             // then the model-driven tool loop, then the instant device
-                            // router, then plain inference (local model when one is
-                            // configured, cloud otherwise).
+                            // router, then plain inference (cloud when configured,
+                            // local otherwise).
                             else -> {
                                 if (tryAgentControl(prompt)) {
                                     return@execute
                                 }
-                                val preferLocal = localOnnxRuntimeEngine.isConfigured()
+                                val preferLocal = shouldAutoPreferLocal()
                                 if (looksMultiStep(prompt) || isAgentControl(prompt)) {
                                     if (preferLocal) {
                                         runLocalAgentTaskLoop(JSONObject().put("goal", prompt))
@@ -685,6 +685,10 @@ class AgentAssistantSession(context: Context) : VoiceInteractionSession(context)
         }
         val contextSummary = runCatching { personalContextEngine.contextForPrompt(prompt) }.getOrDefault("")
         return if (contextSummary.isBlank()) baseSystem else "$baseSystem\n\n$contextSummary"
+    }
+
+    private fun shouldAutoPreferLocal(): Boolean {
+        return backendConfig.apiKey.isBlank() && localOnnxRuntimeEngine.isConfigured()
     }
 
     /**
